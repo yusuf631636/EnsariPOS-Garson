@@ -1,0 +1,38 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- EnsariPOS Local Garson APK (30.09.2026). Sadece bir istemci: ilk acilista restoran
+     bilgisayarindaki Garson sunucusunun adresini sorar (www/index.html) ve onu acar.
+     Derleme: derle.ps1 -> ..\dist\EnsariPOSGarson.apk (debug anahtariyla imzali; eski
+     surumun uzerine kurulabilsin diye ayni anahtar). Ikonlar: res\icon (kaynak ..\logo). -->
+<widget id="com.ensaripos.garson" version="1.0.4" xmlns="http://www.w3.org/ns/widgets" xmlns:android="http://schemas.android.com/apk/res/android" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>EnsariPOS Garson</name>
+    <description>EnsariPOS Local Garson - ucretsiz yerel garson terminali</description>
+    <author email="destek@ornek-alanadi.com" href="https://ornek-alanadi.com">EnsariPOS</author>
+    <content src="index.html" />
+    <access origin="*" />
+    <allow-navigation href="http://*/*" />
+    <allow-navigation href="https://*/*" />
+    <allow-intent href="http://*/*" />
+    <allow-intent href="https://*/*" />
+    <allow-intent href="tel:*" />
+    <preference name="Orientation" value="portrait" />
+    <preference name="AndroidXEnabled" value="true" />
+    <preference name="AndroidInsecureFileModeEnabled" value="true" />
+    <preference name="MixedContentMode" value="0" />
+    <!-- sunucu sayfasi acilamazsa (IP degisti / PC kapali) uygulama kapanmasin, baslangica donup yeniden arasin -->
+    <preference name="ErrorUrl" value="file:///android_asset/www/index.html#hata" />
+    <preference name="BackgroundColor" value="0xff142049" />
+    <preference name="AndroidWindowSplashScreenBackground" value="#142049" />
+    <preference name="AndroidWindowSplashScreenAnimatedIcon" value="res/icon/xxxhdpi-fg.png" />
+    <platform name="android">
+        <allow-intent href="market:*" />
+        <edit-config file="app/src/main/AndroidManifest.xml" mode="merge" target="/manifest/application">
+            <application android:usesCleartextTraffic="true" />
+        </edit-config>
+        <icon density="ldpi" src="res/icon/ldpi.png" foreground="res/icon/ldpi-fg.png" background="res/icon/ldpi-bg.png" />
+        <icon density="mdpi" src="res/icon/mdpi.png" foreground="res/icon/mdpi-fg.png" background="res/icon/mdpi-bg.png" />
+        <icon density="hdpi" src="res/icon/hdpi.png" foreground="res/icon/hdpi-fg.png" background="res/icon/hdpi-bg.png" />
+        <icon density="xhdpi" src="res/icon/xhdpi.png" foreground="res/icon/xhdpi-fg.png" background="res/icon/xhdpi-bg.png" />
+        <icon density="xxhdpi" src="res/icon/xxhdpi.png" foreground="res/icon/xxhdpi-fg.png" background="res/icon/xxhdpi-bg.png" />
+        <icon density="xxxhdpi" src="res/icon/xxxhdpi.png" foreground="res/icon/xxxhdpi-fg.png" background="res/icon/xxxhdpi-bg.png" />
+    </platform>
+</widget>

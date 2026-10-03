@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <title>Mutfak Ekranı - EnsariPOS Local Garson</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="theme-color" content="#0f1420">
+    <link rel="icon" href="images/app-icon-192.png">
+    <style>
+        /* Mutfak ekrani (29.09.2026): tablet/TV'de acilir. Siparisler SambaPOS veritabanindan
+           okunur, "Hazir" basinca siparisi giren garsonun telefonuna bildirim gider.
+           ES5 yazim + eski tarayici uyumlu CSS (inset/gap YOK). */
+        * { box-sizing: border-box; }
+        html, body { margin: 0; height: 100%; background: #0f1420; color: #e6e9ef; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+        .top { display: flex; align-items: center; padding: 12px 18px; background: #1a2130; border-bottom: 1px solid #2a3345; position: sticky; top: 0; z-index: 5; }
+        .top h1 { margin: 0; font-size: 22px; flex: 1; }
+        .top .cnt { font-size: 16px; color: #9aa3b2; margin-right: 16px; }
+        .top .clock { font-size: 24px; font-weight: 800; color: #ff7a30; margin-right: 14px; }
+        .top button { background: #2a3345; color: #e6e9ef; border: 0; border-radius: 10px; padding: 10px 14px; font-size: 15px; font-weight: 700; margin-left: 8px; }
+        .grid { display: flex; flex-wrap: wrap; padding: 10px; }
+        .card { width: 300px; margin: 8px; background: #1a2130; border-radius: 16px; border-top: 8px solid #16a34a; box-shadow: 0 6px 20px rgba(0,0,0,.35); display: flex; flex-direction: column; }
+        .card.warn { border-top-color: #ff7a30; }
+        .card.late { border-top-color: #e5484d; }
+        .card .hd { display: flex; align-items: baseline; padding: 12px 14px 6px; }
+        .card .tb { font-size: 24px; font-weight: 900; flex: 1; }
+        .card .age { font-size: 20px; font-weight: 800; }
+        .card.warn .age { color: #ff7a30; } .card.late .age { color: #e5484d; }
+        .card .wt { padding: 0 14px 8px; color: #9aa3b2; font-size: 14px; }
+        .card ul { list-style: none; margin: 0; padding: 0 14px; flex: 1; }
+        .card li { padding: 8px 0; border-top: 1px solid #2a3345; font-size: 19px; }
+        .card li b { display: inline-block; min-width: 38px; color: #ff7a30; font-size: 22px; }
+        .card li .pt { color: #9aa3b2; font-size: 15px; }
+        .card li .tg { display: block; margin-left: 38px; color: #facc15; font-size: 15px; font-weight: 700; }
+        .card .ok { margin: 12px 14px 14px; background: #16a34a; color: #fff; border: 0; border-radius: 12px; padding: 16px; font-size: 22px; font-weight: 900; }
+        .empty { text-align: center; color: #9aa3b2; font-size: 22px; margin-top: 18vh; }
+        .login { max-width: 340px; margin: 12vh auto; background: #1a2130; border-radius: 18px; padding: 24px; text-align: center; }
+        .login h2 { margin: 0 0 6px; }
+        .login p { color: #9aa3b2; margin: 0 0 14px; font-size: 14px; }
+        .pin { font-size: 30px; letter-spacing: 10px; height: 44px; }
+        .pad { display: flex; flex-wrap: wrap; margin: 8px -5px 0; }
+        .pad button { width: 30%; margin: 5px 1.66%; height: 60px; font-size: 26px; font-weight: 800; border: 0; border-radius: 12px; background: #2a3345; color: #fff; }
+        .pad .go { background: #16a34a; }
+        .err { color: #e5484d; min-height: 20px; font-weight: 700; }
+        .undo { position: fixed; left: 50%; bottom: 20px; -webkit-transform: translateX(-50%); transform: translateX(-50%); background: #2a3345; color: #fff; border-radius: 14px; padding: 12px 16px; font-size: 17px; box-shadow: 0 8px 26px rgba(0,0,0,.5); z-index: 9; }
+        .undo button { margin-left: 12px; background: #ff7a30; color: #fff; border: 0; border-radius: 10px; padding: 9px 14px; font-weight: 800; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <div id="loginBox" class="login" style="display:none">
+        <h2>👨‍🍳 Mutfak Ekranı</h2>
+        <p>SambaPOS / AlfaPOS PIN'inizi girin</p>
+        <div class="pin" id="pinView"></div>
+        <div class="err" id="loginErr"></div>
+        <div class="pad" id="pad"></div>
+    </div>
+    <div id="app" style="display:none">
+        <div class="top">
+            <h1>👨‍🍳 Mutfak</h1>
+            <span class="cnt" id="cnt"></span>
+            <span class="clock" id="clock">--:--</span>
+            <button type="button" id="clearBtn" title="Bildirim göndermeden hepsini kaldır">🧹 Tümünü temizle</button>
+            <button type="button" id="soundBtn" title="Yeni siparişte ses">🔔</button>
+            <button type="button" id="logoutBtn">Çıkış</button>
+        </div>
+        <div class="grid" id="grid"></div>
+        <div class="empty" id="empty" style="display:none">Bekleyen sipariş yok ✓</div>
+    </div>
+    <div class="undo" id="undo" style="display:none"><span id="undoText"></span><button type="button" id="undoBtn">Geri Al</button></div>
+<script>
+(function () {
+    var pin = '', known = {}, firstLoad = true, soundOn = true, undoTimer = null, lastUndo = null, timer = null;
+    function $(id) { return document.getElementById(id); }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    function req(method, url, body, cb) {
+        var x = new XMLHttpRequest();
+        x.open(method, url, true);
+        if (body) x.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
+        x.onreadystatechange = function () {
+            if (x.readyState !== 4) return;
+            var d = null; try { d = JSON.parse(x.responseText || 'null'); } catch (e) { }
+            cb(x.status, d);
+        };
+        x.send(body ? JSON.stringify(body) : null);
+    }
+    try { soundOn = localStorage.getItem('egKitchenSound') !== '0'; } catch (e) { }
+
+    // ---------------------------------------------------------------- Giris
+    function showLogin() { clearInterval(timer); timer = null; $('app').style.display = 'none'; $('loginBox').style.display = 'block'; }
+    function renderPin() { $('pinView').textContent = new Array(pin.length + 1).join('•'); }
+    (function buildPad() {
+        var keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', 'OK'], h = '';
+        for (var i = 0; i < keys.length; i++) h += '<button type="button" data-k="' + keys[i] + '"' + (keys[i] === 'OK' ? ' class="go"' : '') + '>' + keys[i] + '</button>';
+        $('pad').innerHTML = h;
+        $('pad').onclick = function (e) {
+            var k = e.target.getAttribute('data-k'); if (!k) return;
+            if (k === 'C') pin = ''; else if (k === 'OK') return login(); else if (pin.length < 12) pin += k;
+            renderPin();
+        };
+    })();
+    document.addEventListener('keydown', function (e) {
+        if ($('loginBox').style.display === 'none') return;
+        if (e.key >= '0' && e.key <= '9' && pin.length < 12) { pin += e.key; renderPin(); }
+        else if (e.key === 'Backspace') { pin = pin.slice(0, -1); renderPin(); }
+        else if (e.key === 'Enter') login();
+    });
+    function login() {
+        if (!pin) return;
+        $('loginErr').textContent = 'Giriş yapılıyor…';
+        req('POST', '/api/login', { pin: pin }, function (st, d) {
+            pin = ''; renderPin();
+            if (st !== 200) { $('loginErr').textContent = (d && d.error) || 'Giriş yapılamadı.'; return; }
+            $('loginErr').textContent = '';
+            start();
+        });
+    }
+    $('logoutBtn').onclick = function () { req('POST', '/api/logout', null, function () { showLogin(); }); };
+
+    // ---------------------------------------------------------------- Ses
+    var ctx = null;
+    function unlock() { try { if (!ctx) { var AC = window.AudioContext || window.webkitAudioContext; if (AC) ctx = new AC(); } if (ctx && ctx.state === 'suspended') ctx.resume(); } catch (e) { } }
+    document.addEventListener('click', unlock, true);
+    document.addEventListener('touchstart', unlock, true);
+    function ding() {
+        if (!soundOn || !ctx) return;
+        try {
+            [0, 0.18].forEach(function (t, i) {
+                var o = ctx.createOscillator(), g = ctx.createGain();
+                o.frequency.value = i ? 1320 : 990;
+                g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+                g.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + t + 0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.3);
+                o.connect(g); g.connect(ctx.destination); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.32);
+            });
+        } catch (e) { }
+    }
+    function paintSound() { $('soundBtn').textContent = soundOn ? '🔔' : '🔕'; }
+    $('soundBtn').onclick = function () { soundOn = !soundOn; try { localStorage.setItem('egKitchenSound', soundOn ? '1' : '0'); } catch (e) { } paintSound(); unlock(); ding(); };
+    paintSound();
+
+    // ---------------------------------------------------------------- Siparisler
+    function fmtAge(sec) { var m = Math.floor(sec / 60); return m < 60 ? m + ' dk' : Math.floor(m / 60) + ' sa ' + (m % 60) + ' dk'; }
+    var cards = [], loadedAt = 0;
+    function draw() {
+        var extra = Math.floor((Date.now() - loadedAt) / 1000);
+        $('grid').innerHTML = cards.map(function (c, idx) {
+            var age = c.ageSec + extra, cls = age >= 1200 ? ' late' : age >= 600 ? ' warn' : '';
+            return '<div class="card' + cls + '"><div class="hd"><span class="tb">' + esc(c.table) + '</span><span class="age">' + fmtAge(age) + '</span></div>' +
+                '<div class="wt">' + esc(c.waiter || '') + (c.number ? ' · #' + esc(c.number) : '') + '</div><ul>' +
+                c.items.map(function (it) {
+                    var q = Number(it.qty); q = q % 1 ? q.toFixed(1).replace('.', ',') : q;
+                    return '<li><b>' + q + '×</b>' + esc(it.name) + (it.portion ? ' <span class="pt">(' + esc(it.portion) + ')</span>' : '') +
+                        (it.tags ? '<span class="tg">➤ ' + esc(it.tags) + '</span>' : '') + '</li>';
+                }).join('') + '</ul><button type="button" class="ok" data-i="' + idx + '">✓ Hazır</button></div>';
+        }).join('');
+        $('empty').style.display = cards.length ? 'none' : 'block';
+        $('cnt').textContent = cards.length ? cards.length + ' masa bekliyor' : '';
+    }
+    function load() {
+        req('GET', '/api/kitchen/orders?t=' + Date.now(), null, function (st, d) {
+            if (st === 401) return showLogin();
+            if (st !== 200 || !d) return;
+            var isNew = false, now = {};
+            (d.cards || []).forEach(function (c) { c.items.forEach(function (it) { now[it.id] = 1; if (!known[it.id]) isNew = true; }); });
+            if (isNew && !firstLoad) ding();
+            known = now; firstLoad = false;
+            cards = d.cards || []; loadedAt = Date.now();
+            draw();
+        });
+    }
+    $('grid').onclick = function (e) {
+        var i = e.target.getAttribute('data-i'); if (i === null) return;
+        var c = cards[+i]; if (!c) return;
+        e.target.disabled = true;
+        var ids = c.items.map(function (it) { return it.id; });
+        var summary = c.items.map(function (it) { return (Number(it.qty) || 1) + ' ' + it.name; }).join(', ');
+        req('POST', '/api/kitchen/ready', { orderIds: ids, table: c.table, waiter: c.waiter, items: summary }, function (st, d) {
+            if (st === 401) return showLogin();
+            if (st !== 200) { e.target.disabled = false; alert((d && d.error) || 'Kaydedilemedi.'); return; }
+            cards.splice(+i, 1); draw();
+            lastUndo = { ids: ids, table: c.table };
+            $('undoText').textContent = '✓ ' + c.table + ' hazır — garsona bildirildi';
+            $('undo').style.display = 'block';
+            clearTimeout(undoTimer);
+            undoTimer = setTimeout(function () { $('undo').style.display = 'none'; lastUndo = null; }, 8000);
+        });
+    };
+    /* Ilk kurulumda / gun basinda eski siparisleri garsonlara bildirim GITMEDEN kaldirir */
+    $('clearBtn').onclick = function () {
+        if (!cards.length) return;
+        var ids = [];
+        cards.forEach(function (c) { c.items.forEach(function (it) { ids.push(it.id); }); });
+        if (!confirm(cards.length + ' masanın siparişleri ekrandan kaldırılacak (garsonlara bildirim GİTMEZ). Emin misiniz?')) return;
+        req('POST', '/api/kitchen/ready', { orderIds: ids.slice(0, 500), silent: true }, function (st) {
+            if (st === 401) return showLogin();
+            load();
+        });
+    };
+    $('undoBtn').onclick = function () {
+        if (!lastUndo) return;
+        req('POST', '/api/kitchen/unready', { orderIds: lastUndo.ids }, function () { $('undo').style.display = 'none'; lastUndo = null; load(); });
+    };
+    function tickClock() { var n = new Date(); $('clock').textContent = ('0' + n.getHours()).slice(-2) + ':' + ('0' + n.getMinutes()).slice(-2); }
+    function start() {
+        $('loginBox').style.display = 'none'; $('app').style.display = 'block';
+        load();
+        clearInterval(timer);
+        timer = setInterval(function () { load(); tickClock(); }, 5000);
+        tickClock();
+    }
+    setInterval(function () { if (cards.length) draw(); }, 30000);   // sure sayaclari
+    req('GET', '/api/me', null, function (st) { if (st === 200) start(); else showLogin(); });
+})();
+</script>
+</body>
+</html>

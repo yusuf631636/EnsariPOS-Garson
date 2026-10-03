@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="initial-scale=1, width=device-width, viewport-fit=cover">
+    <title>EnsariPOS Garson</title>
+    <style>
+        body{margin:0;background:#142049;color:#f0f0f0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+             display:flex;align-items:center;justify-content:center;min-height:100vh}
+        .box{text-align:center;width:84%;max-width:340px}
+        .box h1{font-size:20px;margin:0 0 10px}
+        .box p{color:#b8c0d8;font-size:13px;line-height:1.45;white-space:pre-line}
+        .spin{width:34px;height:34px;border:3px solid #3a4454;border-top-color:#ff7a30;border-radius:50%;
+              margin:0 auto 16px;animation:spin 1s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .bar{height:6px;background:#2a3564;border-radius:3px;overflow:hidden;margin:10px 0 4px;display:none}
+        .bar i{display:block;height:100%;width:0;background:#ff7a30;transition:width .2s}
+        #list{margin-top:12px}
+        #list button,#cfgBox button,.alt{width:100%;padding:12px;border:0;border-radius:10px;font-weight:800;font-size:15px;margin-bottom:8px}
+        #list button{background:#fff;color:#142049}
+        #cfgBox{display:none;margin-top:14px}
+        #cfgBox input{width:100%;box-sizing:border-box;padding:12px;font-size:15px;text-align:center;
+              border-radius:10px;border:1px solid #3a4454;background:#fff;color:#222;margin-bottom:10px}
+        #cfgBox button{background:#ff7a30;color:#fff}
+        .alt{background:#2a3564;color:#fff;display:none}
+        #chgLink{display:inline-block;margin-top:14px;color:#8a95a5;font-size:12px;text-decoration:underline}
+        .logo{width:72px;height:72px;margin:0 auto 12px;display:block}
+    </style>
+</head>
+<body>
+    <div class="box">
+        <svg class="logo" viewBox="0 0 512 512"><defs><linearGradient id="or" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff9a4d"/><stop offset="1" stop-color="#ff6a1f"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="#1d2b63"/><path d="M268 178 a92 92 0 0 1 184 0 z" fill="url(#or)"/><circle cx="360" cy="80" r="15" fill="url(#or)"/><rect x="252" y="178" width="216" height="20" rx="10" fill="#fff"/><path d="M318 198 L318 262 Q318 300 282 318 L250 334" stroke="#fff" stroke-width="30" fill="none" stroke-linecap="round"/><circle cx="168" cy="190" r="62" fill="#fff"/><path d="M62 452 Q62 300 168 290 Q274 300 274 452 z" fill="#fff"/><path d="M130 296 L168 360 L206 296 Z" fill="#1d2b63"/><path d="M168 330 L128 308 L128 352 Z M168 330 L208 308 L208 352 Z" fill="url(#or)"/></svg>
+        <h1>EnsariPOS Garson</h1>
+        <div class="spin" id="spin"></div>
+        <p id="msg">Başlatılıyor…</p>
+        <div class="bar" id="bar"><i id="barFill"></i></div>
+        <div id="list"></div>
+        <button class="alt" id="rescanBtn">🔍 Sunucu bul</button>
+        <button class="alt" id="manualBtn">Adresi elle yaz</button>
+        <div id="cfgBox">
+            <input id="cfgInput" type="text" inputmode="url" placeholder="ör: 192.168.1.10:6363" />
+            <button id="cfgBtn">Bağlan</button>
+        </div>
+        <a href="#" id="chgLink">Sunucu adresini değiştir</a>
+    </div>
+    <script src="cordova.js"></script>
+    <script>
+        /* EnsariPOS Garson APK (1.0.4, 30.09.2026 - acilis takilmasi duzeltildi, bkz. boot(); bulunamazsa tanitim sunucusu, bkz. goDemo()). Onceki not (1.0.2): APK sadece bir ISTEMCI: restoran bilgisayarinda
+           kurulu Garson sunucusunu (EnsariGarsonSrv, port 6363) acar. Onceki surumde varsayilan adres
+           149.100.70.166 (bulut sunucusu) idi - restoranda calismaz, telefon "sunucu bulamiyor"du;
+           kayitli adres yanlissa uygulama hata verip kapaniyordu.
+           Simdi: kayitli adres once KONTROL edilir; ulasilamazsa telefonun Wi-Fi agi (ayni /24)
+           taranir ve Garson sunucusu otomatik bulunur. Sunucu sayfasi sonradan acilamazsa
+           (IP degisti, PC kapali) Cordova ErrorUrl buraya "#hata" ile geri doner ve yeniden arar.
+           Sunucu tanima: http://IP:6363/images/app-icon-192.png resmi yuklenebiliyorsa Garson'dur. */
+        var PORT = 6363;
+        var storage = window.localStorage;
+        var started = false, scanning = false, scanId = 0, manual = false;
+        function $(id) { return document.getElementById(id); }
+        function normalize(v) {
+            v = (v || '').replace(/^\s+|\s+$/g, '');
+            if (!v) return '';
+            if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
+            v = v.replace(/\/+$/, '');
+            if (!/:\d+$/.test(v.replace(/^https?:\/\//i, ''))) v += ':' + PORT;
+            return v + '/';
+        }
+        function hostOf(url) { return url.replace(/^https?:\/\//i, '').replace(/\/$/, ''); }
+        function ui(msg, spin) {
+            $('msg').textContent = msg;
+            $('spin').style.display = spin ? 'block' : 'none';
+        }
+        function showButtons(on) {
+            $('rescanBtn').style.display = on ? 'block' : 'none';
+            $('manualBtn').style.display = on ? 'block' : 'none';
+        }
+        /* Tanitim (demo) sunucusu: yerel Garson sunucusu bulunamazsa buna baglanilir (1.0.4, kullanici istegi:
+           "sunucu bulamazsa buradaki IP'ye baglansin, tanitimda lazim"). KAYITLI ADRES OLARAK SAKLANMAZ -
+           telefon sonra restoranin Wi-Fi'ina girince yerel sunucu yine once aranir. */
+        var DEMO = 'http://149.100.70.166:6363/';
+        function goDemo(reason) {
+            var id = scanId;
+            ui((reason ? reason + '\n' : '') + 'Tanıtım sunucusuna bağlanılıyor…', true);
+            probe(DEMO, 6000, function (ok) {
+                if (manual || id !== scanId) return;
+                if (ok) { ui('Bağlanılıyor: tanıtım sunucusu', true); location.replace(DEMO); return; }
+                ui('Garson sunucusu bulunamadı, tanıtım sunucusuna da ulaşılamadı.\nİnternet / Wi-Fi bağlantısını kontrol edip "Sunucu bul"a basın ya da adresi elle yazın.', false);
+                showButtons(true);
+            });
+        }
+        function goTo(url) {
+            if (url === DEMO) { location.replace(DEMO); return; }   // demo adresi elle secilse de kaydedilmez
+            storage.setItem('eg_server_url', url);
+            var h = hostOf(url), m = h.match(/^(\d+\.\d+\.\d+)\.\d+/);
+            if (m) storage.setItem('eg_last_subnet', m[1]);
+            ui('Bağlanılıyor: ' + h, true);
+            location.replace(url);
+        }
+        /* Garson sunucusu mu? (resim yuklenirse evet) */
+        function probe(base, timeout, cb) {
+            var img = new Image(), done = false;
+            var t = setTimeout(function () { finish(false); }, timeout);
+            function finish(ok) { if (done) return; done = true; clearTimeout(t); img.onload = img.onerror = null; if (!ok) img.src = ''; cb(ok); }
+            img.onload = function () { finish(img.width > 0); };
+            img.onerror = function () { finish(false); };
+            img.src = base + 'images/app-icon-192.png?eg=' + new Date().getTime();
+        }
+        function getPhoneIp(cb) {
+            var called = false;
+            function once(v) { if (!called) { called = true; cb(v); } }
+            setTimeout(function () { once(null); }, 2500);
+            try {
+                if (window.networkinterface && networkinterface.getWiFiIPAddress) {
+                    networkinterface.getWiFiIPAddress(function (info) {
+                        once(typeof info === 'string' ? info : (info && info.ip) || null);
+                    }, function () { once(null); });
+                    return;
+                }
+            } catch (e) {}
+            once(null);
+        }
+        function scanSubnets(subnets, id, found, cb) {
+            if (id !== scanId) return;
+            if (!subnets.length || found.length) { cb(found); return; }
+            var net = subnets.shift(), next = 1, active = 0, finished = 0, total = 254, CONC = 48;
+            $('bar').style.display = 'block';
+            ui('Wi-Fi ağında Garson sunucusu aranıyor… (' + net + '.x)', true);
+            function pump() {
+                while (active < CONC && next <= 254) {
+                    (function (ip) {
+                        active++;
+                        probe('http://' + ip + ':' + PORT + '/', 1500, function (ok) {
+                            active--; finished++;
+                            if (id !== scanId) return;
+                            if (ok) found.push(ip + ':' + PORT);
+                            $('barFill').style.width = Math.round(finished * 100 / total) + '%';
+                            if (finished >= total) scanSubnets(subnets, id, found, cb);
+                            else pump();
+                        });
+                    })(net + '.' + (next++));
+                }
+            }
+            pump();
+        }
+        function startScan(lastHost) {
+            if (scanning) return;
+            scanning = true; var id = ++scanId;
+            $('list').innerHTML = ''; $('cfgBox').style.display = 'none'; showButtons(false);
+            $('manualBtn').style.display = 'block';   // tarama beklenmeden elle adres yazilabilsin
+            ui('Telefonun ağı okunuyor…', true);
+            getPhoneIp(function (ip) {
+                if (id !== scanId) return;
+                var subnets = [], m = ip && ip.match(/^(\d+\.\d+\.\d+)\.\d+$/);
+                function add(s) { if (s && subnets.indexOf(s) === -1) subnets.push(s); }
+                if (m) add(m[1]);
+                var last = storage.getItem('eg_last_subnet');
+                if (last && /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(last)) add(last);   // yerel ag ise
+                if (!subnets.length) {
+                    // Wi-Fi yok (mobil veri) ya da ag okunamadi: 4 agi kor taramak ~30 sn surer - dogrudan adres sor
+                    scanning = false;
+                    goDemo((lastHost ? lastHost + ' adresine ulaşılamadı. ' : '') + 'Telefon Wi-Fi\'a bağlı değil.');
+                    return;
+                }
+                scanSubnets(subnets, id, [], function (found) {
+                    scanning = false;
+                    $('bar').style.display = 'none'; $('barFill').style.width = '0';
+                    if (id !== scanId) return;
+                    if (found.length === 1) { goTo(normalize(found[0])); return; }
+                    if (found.length > 1) {
+                        ui('Birden fazla Garson sunucusu bulundu, seçin:', false);
+                        var html = '';
+                        for (var i = 0; i < found.length; i++) html += '<button data-h="' + found[i] + '">' + found[i] + '</button>';
+                        $('list').innerHTML = html;
+                        showButtons(true);
+                        return;
+                    }
+                    goDemo((m ? 'Bu Wi-Fi ağında (' + m[1] + '.x) ' : '') + 'Garson sunucusu bulunamadı.');
+                });
+            });
+        }
+        function showConfig() {
+            manual = true; scanId++; scanning = false;
+            $('bar').style.display = 'none'; $('list').innerHTML = '';
+            ui('Sunucu adresini girin (bilgisayardaki "Telefon Bağla" sayfasında yazar):', false);
+            $('cfgBox').style.display = 'block';
+            $('rescanBtn').style.display = 'block'; $('manualBtn').style.display = 'none';
+            var saved = storage.getItem('eg_server_url');
+            $('cfgInput').value = saved ? hostOf(saved) : '';
+        }
+        /* 1.0.3 (30.09.2026, "acilista sabit ekranda kaliyor"): kayitli adres ARTIK SILINMEZ (1.0.2 bulut IP'sini
+           her acilista siliyordu - internetten baglanan telefon her seferinde taramaya dusup ~30 sn bekliyordu).
+           Kayitli adres once 2 kez denenir; ulasilamazsa: Wi-Fi varsa taranir, yoksa (mobil veri) kor tarama
+           yapilmaz, dogrudan adres girme ekrani acilir. "Adresi elle yaz" tarama sirasinda da gorunur. */
+        function boot() {
+            if (started) return; started = true;
+            var saved = storage.getItem('eg_server_url');
+            var failed = /hata/.test(location.hash);
+            if (saved === DEMO) { storage.removeItem('eg_server_url'); saved = null; }   // 1.0.3'te elle yazilmis tanitim adresi: once yerel sunucu aransin
+            if (!saved) { startScan(); return; }
+            ui((failed ? 'Sunucuya ulaşılamadı, tekrar deneniyor: ' : 'Sunucu kontrol ediliyor: ') + hostOf(saved), true);
+            $('manualBtn').style.display = 'block';
+            probe(saved, 3500, function (ok) {
+                if (manual) return;
+                if (ok) { goTo(saved); return; }
+                probe(saved, 4000, function (ok2) {   // yavas mobil veri / uyanan PC icin ikinci deneme
+                    if (manual) return;
+                    if (ok2) goTo(saved); else startScan(hostOf(saved));
+                });
+            });
+        }
+        $('list').addEventListener('click', function (e) {
+            var h = e.target && e.target.getAttribute && e.target.getAttribute('data-h');
+            if (h) goTo(normalize(h));
+        });
+        $('rescanBtn').addEventListener('click', function () { manual = false; scanning = false; startScan(); });
+        $('manualBtn').addEventListener('click', showConfig);
+        $('cfgBtn').addEventListener('click', function () {
+            var url = normalize($('cfgInput').value);
+            if (!url) return;
+            ui('Kontrol ediliyor: ' + hostOf(url), true);
+            probe(url, 4000, function (ok) {
+                if (ok) goTo(url);
+                else { ui(hostOf(url) + ' adresinde Garson sunucusu yok veya ulaşılamıyor. Adresi ve Wi-Fi\'ı kontrol edin.', false); $('cfgBox').style.display = 'block'; }
+            });
+        });
+        $('chgLink').addEventListener('click', function (e) { e.preventDefault(); showConfig(); });
+        document.addEventListener('deviceready', boot, false);
+        setTimeout(boot, 3000);   // deviceready gelmezse (eklenti hazir olsun diye biraz bekler)
+    </script>
+</body>
+</html>

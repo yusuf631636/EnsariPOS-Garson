@@ -1,0 +1,19 @@
+{
+  "name": "com.ensaripos.garsondirekt",
+  "displayName": "Garson Direkt",
+  "version": "1.0.0",
+  "description": "EnsariPOS Garson Direkt - SambaPOS'a dogrudan baglanan garson terminali",
+  "private": true,
+  "devDependencies": {
+    "cordova-android": "^15.1.0",
+    "cordova-plugin-networkinterface": "^2.2.0"
+  },
+  "cordova": {
+    "platforms": [
+      "android"
+    ],
+    "plugins": {
+      "cordova-plugin-networkinterface": {}
+    }
+  }
+}

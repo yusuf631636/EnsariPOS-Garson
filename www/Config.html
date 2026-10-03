@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <title>Ayarlar - EnsariPOS Local Garson</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#1b2440">
+    <link rel="icon" href="images/app-icon-192.png">
+    <link href="css/theme.css" rel="stylesheet" />
+    <link href="css/eg-app.css" rel="stylesheet" />
+    <script src="scripts/eg-settings.js"></script>
+    <script src="scripts/Jquery.min.js"></script>
+</head>
+<body class="eg-body">
+    <!-- Yonetici kilidi: garsonsys'teki herkes icin AYNI sabit sifre (8503087310) yerine
+         SambaPOS/AlfaPOS'ta YONETICI (Admin) rolundeki bir kullanicinin kendi PIN'i -->
+    <div class="eg-gate" id="egGate" style="display:none;">
+        <div class="eg-gate__card">
+            <div class="eg-gate__icon">🔐</div>
+            <div class="eg-gate__title">Ayarlar Kilitli</div>
+            <div class="eg-gate__sub">SambaPOS / AlfaPOS'ta <b>yönetici (Admin)</b> rolündeki bir kullanıcının PIN'ini girin.<br>Garsonlar ayarları değiştiremez.</div>
+            <div class="eg-gate__err" id="egGateErr"></div>
+            <input class="eg-amount eg-gate__pin" id="egGatePin" type="password" inputmode="none" readonly placeholder="••••" />
+            <div class="eg-pad" id="egGatePad"></div>
+            <div style="display:flex;gap:10px;margin-top:12px;">
+                <a href="index.html" class="eg-btn eg-btn--ghost" style="flex:1;text-decoration:none;">← Geri</a>
+                <button type="button" class="eg-btn eg-btn--green" style="flex:1.4;" id="egGateOk">Kilidi Aç</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="eg-cfg-top">
+        <a href="index.html" class="eg-tb-btn" title="Geri">←</a>
+        <div class="eg-cfg-top__title">⚙️ Ayarlar <small style="font-weight:600;color:var(--eg-muted);font-size:11.5px;">EnsariPOS Local Garson</small></div>
+        <button type="button" class="eg-tb-btn egThemeBtn" title="Tema">🌙</button>
+        <button type="button" class="eg-tb-btn" id="egLockBtn" title="Kilitle">🔒</button>
+    </div>
+
+    <div class="eg-cfg" id="egCfg" style="display:none;">
+        <div id="egCfgError" class="eg-cfg-card" style="display:none;border:1px solid var(--eg-red);color:var(--eg-red);font-size:13.5px;"></div>
+
+        <!-- 1) Baglanti -->
+        <div class="eg-cfg-card">
+            <div class="eg-cfg-card__head"><div class="eg-cfg-card__icon">📡</div><div><div class="eg-cfg-card__title">Bağlantı</div><div class="eg-cfg-card__sub">Bu bilgisayardaki garson servisi · SambaPOS veritabanı · SambaPOS mesaj sunucusu</div></div></div>
+            <div class="eg-status">
+                <div class="eg-status__item"><span class="eg-status__dot" id="stWifi"></span>Wi-Fi</div>
+                <div class="eg-status__item"><span class="eg-status__dot" id="stSql"></span>Veritabanı</div>
+                <div class="eg-status__item"><span class="eg-status__dot" id="stSamba"></span>SambaPOS</div>
+            </div>
+            <div class="eg-url" id="egPhoneUrl">Adres bulunuyor…</div>
+            <div style="display:flex;gap:8px;margin-top:10px;">
+                <button type="button" class="eg-btn eg-btn--orange" style="flex:1;height:44px;" id="egScanBtn">🔍 Sunucu Bul</button>
+                <button type="button" class="eg-btn eg-btn--ghost" style="flex:1;height:44px;" id="egRetestBtn">↻ Yeniden Test Et</button>
+            </div>
+            <div id="egScanResult"></div>
+            <div class="eg-field" style="margin:10px 0 0;">
+                <label>SambaPOS mesaj sunucusu (elle)</label>
+                <div class="eg-inline">
+                    <input class="eg-input" id="egManualHost" placeholder="127.0.0.1 veya 192.168.1.10" />
+                    <input class="eg-input" id="egManualPort" style="max-width:90px;flex:none;" placeholder="9000" inputmode="numeric" />
+                    <button type="button" class="eg-btn eg-btn--dark" style="height:46px;" id="egManualUse">Bağlan</button>
+                </div>
+                <div class="eg-help">Genelde SambaPOS bu bilgisayardadır (127.0.0.1 : 9000). Birden fazla SambaPOS bilgisayarı varsa "Sunucu Bul" ağı tarar.</div>
+            </div>
+        </div>
+
+        <!-- 2) SambaPOS -->
+        <div class="eg-cfg-card">
+            <div class="eg-cfg-card__head"><div class="eg-cfg-card__icon">🧾</div><div><div class="eg-cfg-card__title">SambaPOS / AlfaPOS Ayarları</div><div class="eg-cfg-card__sub">Listeler veritabanından otomatik gelir</div></div></div>
+            <div class="eg-field"><label>Terminal</label><select class="eg-select" id="terminal"></select></div>
+            <div class="eg-field"><label>Departman</label><select class="eg-select" id="department"></select></div>
+            <div class="eg-field"><label>Adisyon Tipi</label><select class="eg-select" id="ticket"></select></div>
+            <div class="eg-field"><label>Menü</label><select class="eg-select" id="menu"></select></div>
+            <div class="eg-field"><label>Açılış Varlık Ekranı</label><select class="eg-select" id="entity"></select>
+                <div class="eg-help">Varlık tipi: <b id="entityTypeLabel">-</b></div></div>
+        </div>
+
+        <!-- 3) Varlik ekrani sekmeleri -->
+        <div class="eg-cfg-card">
+            <div class="eg-cfg-card__head"><div class="eg-cfg-card__icon">🗂️</div><div><div class="eg-cfg-card__title">Varlık Ekranı Sekmeleri</div><div class="eg-cfg-card__sub">Bahçe / Salon / Teras gibi - masalar ekranının üstünde sekme olarak görünür</div></div></div>
+            <div class="eg-checklist" id="entityScreenChecklist"></div>
+            <div class="eg-help" style="font-size:11.5px;color:var(--eg-muted);margin-top:6px;">Hiçbiri işaretli değilse masa tipindeki TÜM ekranlar otomatik gösterilir (SambaPOS'a yeni eklenen ekran da kendiliğinden gelir).</div>
+        </div>
+
+        <!-- 4) Otomasyon komutlari -->
+        <div class="eg-cfg-card">
+            <div class="eg-cfg-card__head"><div class="eg-cfg-card__icon">⚡</div><div><div class="eg-cfg-card__title">Otomasyon Komutları</div><div class="eg-cfg-card__sub">Adisyon ekranındaki butonlar</div></div></div>
+            <div class="eg-field">
+                <label>Adisyonu kapatan komut(lar)</label>
+                <input class="eg-input" id="automation" list="automationDatalist" placeholder="Hesap Yaz" />
+                <datalist id="automationDatalist"></datalist>
+                <div class="eg-help">Çalıştırılınca adisyonu kapatıp masalara döner. Virgülle birden fazla yazılabilir: <b>Hesap Yaz, Nakit, Kredi Kartı</b></div>
+            </div>
+            <div class="eg-field" style="margin-bottom:6px;">
+                <label>Gösterilecek komutlar</label>
+                <div style="display:flex;gap:6px;margin-bottom:6px;">
+                    <button type="button" class="eg-btn eg-btn--ghost" style="height:34px;font-size:12.5px;" id="egAutoAll">Tümünü seç</button>
+                    <button type="button" class="eg-btn eg-btn--ghost" style="height:34px;font-size:12.5px;" id="egAutoNone">Hiçbiri</button>
+                </div>
+                <div class="eg-checklist" id="automationChecklist"></div>
+                <div class="eg-help">Sadece işaretli komutlar buton olarak gösterilir (hiçbiri işaretli değilse hepsi).</div>
+            </div>
+            <div class="eg-field">
+                <label>Listede olmayan komutu elle ekle</label>
+                <div class="eg-inline"><input class="eg-input" id="egAutoManual" placeholder="SambaPOS'taki komut adı" /><button type="button" class="eg-btn eg-btn--dark" style="height:46px;" id="egAutoManualAdd">Ekle</button></div>
+            </div>
+        </div>
+
+        <!-- 5) Odeme -->
+        <div class="eg-cfg-card">
+            <div class="eg-cfg-card__head"><div class="eg-cfg-card__icon">💳</div><div><div class="eg-cfg-card__title">Ödeme</div><div class="eg-cfg-card__sub">"Ödeme Al" ekranı ve garson yetkileri</div></div></div>
+            <div class="eg-field"><label>Hızlı Ödeme 1</label><select class="eg-select" id="fastPayment1"></select></div>
+            <div class="eg-field"><label>Hızlı Ödeme 2</label><select class="eg-select" id="fastPayment2"></select></div>
+            <div class="eg-field" style="margin-bottom:0;">
+                <label>Ödeme ALAMAYAN roller</label>
+                <div class="eg-checklist" id="restrictedRolesChecklist"></div>
+                <div class="eg-help">İşaretli roldeki kullanıcılar (ör. Garson) ödeme alamaz, iskonto yapamaz; ödeme/nakit/kredi kartı komutlarını göremez. Bu kural bilgisayardaki serviste uygulanır, telefondan aşılamaz.</div>
+            </div>
+        </div>
+
+        <!-- 6) Davranis ve gorunum -->
+        <div class="eg-cfg-card">
+            <div class="eg-cfg-card__head"><div class="eg-cfg-card__icon">🎛️</div><div><div class="eg-cfg-card__title">Davranış ve Görünüm</div></div></div>
+            <div class="eg-field"><label>Masa sütun sayısı (telefon)</label>
+                <select class="eg-select" id="tableColumns"><option value="3">3 sütun (önerilen)</option><option value="2">2 sütun (büyük)</option><option value="4">4 sütun (küçük)</option><option value="auto">Otomatik (tablet)</option></select></div>
+            <div class="eg-field"><label>Adisyon etiketi</label><input class="eg-input" id="ticketTag" placeholder="ör. Kişi Sayısı" /></div>
+            <div class="eg-row"><div><div class="eg-row__title">Adisyon açılırken etiket sorulsun</div><div class="eg-row__sub">Yeni masada önce yukarıdaki etiket (ör. kişi sayısı) istenir</div></div><label class="eg-switch"><input type="checkbox" id="soru"><span></span></label></div>
+            <div class="eg-row"><div><div class="eg-row__title">Adisyon kapanınca çıkış yap</div><div class="eg-row__sub">Her işlemden sonra garson yeniden PIN girer</div></div><label class="eg-switch"><input type="checkbox" id="exit"><span></span></label></div>
+            <div class="eg-field"><label>Bekleyen masa uyarısı</label>
+                <select class="eg-select" id="staleTableMinutes"><option value="0">Kapalı</option><option value="15">15 dk sipariş yoksa</option><option value="20">20 dk sipariş yoksa</option><option value="30">30 dk sipariş yoksa (önerilen)</option><option value="45">45 dk sipariş yoksa</option><option value="60">60 dk sipariş yoksa</option></select>
+                <div class="eg-help">Bu süredir yeni sipariş girilmeyen dolu masa kırmızı yanıp söner (tatlı/çay sormak için hatırlatma).</div></div>
+            <div class="eg-row"><div><div class="eg-row__title">Titreşim</div><div class="eg-row__sub">Butonlara dokununca kısa titreşim (Android)</div></div><label class="eg-switch"><input type="checkbox" id="hapticFeedback"><span></span></label></div>
+        </div>
+
+        <!-- 7) Bu cihaz (garsonsys'teki "Tehlikeli Alan / sifirla") -->
+        <div class="eg-cfg-card">
+            <div class="eg-cfg-card__head"><div class="eg-cfg-card__icon">🧹</div><div><div class="eg-cfg-card__title">Bu Cihaz</div><div class="eg-cfg-card__sub">Sorun giderme: yalnızca bu telefon/tarayıcıdaki kayıtlı bilgileri temizler, sunucudaki ayarlara dokunmaz</div></div></div>
+            <button type="button" class="eg-btn eg-btn--ghost eg-btn--block" id="egResetDevice" style="color:var(--eg-red);">Bu cihazın önbelleğini temizle</button>
+        </div>
+
+        <!-- 8) Telefonlara kurulum -->
+        <div class="eg-cfg-card">
+            <div class="eg-cfg-card__head"><div class="eg-cfg-card__icon">📱</div><div><div class="eg-cfg-card__title">Telefona / Tablete Kurulum</div><div class="eg-cfg-card__sub">Uygulama gibi tam ekran açılır, ayrıca bir şey indirmeye gerek yok</div></div></div>
+            <div style="display:flex;gap:8px;margin:2px 0 10px;">
+                <a href="baglan.html" target="_blank" class="eg-btn eg-btn--orange" style="flex:1;height:44px;text-decoration:none;display:flex;align-items:center;justify-content:center;">📱 Telefon Bağla (QR)</a>
+                <a href="mutfak.html" target="_blank" class="eg-btn eg-btn--dark" style="flex:1;height:44px;text-decoration:none;display:flex;align-items:center;justify-content:center;">👨‍🍳 Mutfak Ekranı</a>
+            </div>
+            <div style="font-weight:800;font-size:13px;margin-top:4px;">🤖 Android (Chrome)</div>
+            <ol class="eg-steps"><li>Telefon restoranın Wi-Fi'ına bağlı olsun</li><li>Chrome'da yukarıdaki adresi açın</li><li>Sağ üst <b>⋮</b> menüsü → <b>Ana ekrana ekle</b></li></ol>
+            <div style="font-weight:800;font-size:13px;margin-top:8px;">🍎 iPhone / iPad (Safari)</div>
+            <ol class="eg-steps"><li>Safari'de yukarıdaki adresi açın</li><li>Alttaki <b>Paylaş</b> (□↑) düğmesi → <b>Ana Ekrana Ekle</b></li></ol>
+            <div class="eg-help" style="font-size:11.5px;color:var(--eg-muted);margin-top:6px;">Garsonlar kendi SambaPOS/AlfaPOS PIN'leriyle girer. Ayarlar bir kez kaydedilince tüm cihazlara otomatik uygulanır.</div>
+        </div>
+
+        <div style="text-align:center;font-size:11.5px;color:var(--eg-muted);margin:4px 0 10px;">EnsariPOS Local Garson <span id="egVersion"></span> · 📞 0537 618 63 16</div>
+    </div>
+
+    <div class="eg-savebar" id="egSaveBar" style="display:none;">
+        <a href="index.html" class="eg-btn eg-btn--ghost" style="text-decoration:none;">Vazgeç</a>
+        <button type="button" class="eg-btn eg-btn--green" id="egSaveBtn">💾 Kaydet</button>
+    </div>
+
+<script>
+    var storage = window.localStorage;
+    var egOptions = null;
+
+    function egToast(msg) {
+        $('.eg-toast').remove();
+        var t = $('<div class="eg-toast"></div>').text(msg).appendTo('body');
+        setTimeout(function () { t.fadeOut(300, function () { t.remove(); }); }, 2800);
+    }
+    function egJsonList(key) {
+        try { var v = JSON.parse(storage.getItem(key) || 'null'); return Array.isArray(v) ? v : null; } catch (e) { return null; }
+    }
+
+    // ---------------------------------------------------------------- Yonetici kilidi
+    var egGatePin = '';
+    function egGateRender() { $('#egGatePin').val(egGatePin); }
+    function egShowGate() {
+        $('#egGate').show();
+        var pad = $('#egGatePad').empty();
+        ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].forEach(function (k) {
+            $('<button type="button"></button>').text(k).on('click', function () {
+                if (k === 'C') egGatePin = '';
+                else if (k === '⌫') egGatePin = egGatePin.slice(0, -1);
+                else if (egGatePin.length < 12) egGatePin += k;
+                egGateRender();
+            }).appendTo(pad);
+        });
+    }
+    function egUnlock() {
+        if (!egGatePin) return;
+        $('#egGateErr').hide();
+        $.ajax({ url: '/api/admin/unlock', method: 'POST', contentType: 'application/json', data: JSON.stringify({ pin: egGatePin }) })
+            .done(function () { $('#egGate').hide(); egInit(); })
+            .fail(function (xhr) {
+                var msg = 'PIN hatalı.';
+                try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) { }
+                $('#egGateErr').text(msg).show();
+                egGatePin = ''; egGateRender();
+            });
+    }
+
+    // ---------------------------------------------------------------- Baglanti durumu / Sunucu Bul
+    function egDot(id, state) { $('#' + id).removeClass('ok bad').addClass(state === true ? 'ok' : (state === false ? 'bad' : '')); }
+    function egRefreshStatus() {
+        egDot('stWifi', navigator.onLine);
+        $.getJSON('/api/health').done(function (h) {
+            egDot('stSql', h.sql); egDot('stSamba', h.samba);
+            $('#egVersion').text('v' + (h.version || ''));
+            $('#egManualHost').attr('placeholder', h.sambaHost);
+            $('#egManualPort').attr('placeholder', h.sambaPort);
+            if (!h.sql && h.sqlError) $('#egCfgError').text('Veritabanı hatası: ' + h.sqlError).show();
+        }).fail(function () { egDot('stSql', false); egDot('stSamba', false); });
+        $.getJSON('/api/local-info').done(function (info) {
+            var a = info.addresses || [];
+            var here = location.hostname && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' ? location.hostname : null;
+            var list = a.slice();
+            if (here && list.indexOf(here) === -1) list.unshift(here);
+            if (!list.length) { $('#egPhoneUrl').text('Bu bilgisayarın ağ adresi bulunamadı.'); return; }
+            $('#egPhoneUrl').html('📱 Garson telefonlarında açılacak adres:<br><b>http://' + egEsc(list[0]) + ':' + info.port + '</b>' +
+                (list.length > 1 ? '<div style="font-size:11.5px;color:var(--eg-muted);margin-top:4px;">Diğer: ' + list.slice(1).map(function (x) { return 'http://' + egEsc(x) + ':' + info.port; }).join(' · ') + '</div>' : ''));
+        });
+    }
+    function egUseServer(host, port) {
+        $.ajax({ url: '/api/admin/set-samba-host', method: 'POST', contentType: 'application/json', data: JSON.stringify({ host: String(host), port: port || undefined }) })
+            .done(function (r) { egToast('SambaPOS sunucusu: ' + r.sambaHost + ':' + r.sambaPort); egRefreshStatus(); $('#egScanResult').empty(); })
+            .fail(function (xhr) { var m = 'Sunucu seçilemedi.'; try { m = JSON.parse(xhr.responseText).error || m; } catch (e) { } alert(m); });
+    }
+    function egScan() {
+        $('#egScanResult').html('<div class="eg-help" style="text-align:center;padding:10px;">Ağ taranıyor… (birkaç saniye)</div>');
+        $.getJSON('/api/admin/scan-samba-servers').done(function (r) {
+            if (r.scanned === false) {
+                $('#egScanResult').html('<div class="eg-help" style="padding:8px 2px;">Bu bilgisayar yerel bir ağda (192.168.x.x gibi) görünmüyor; taranacak başka cihaz yok. SambaPOS başka bir bilgisayardaysa adresini aşağıya elle yazın.</div>');
+                return;
+            }
+            var found = r.found || [];
+            var html = '<div style="font-weight:800;font-size:13px;margin-top:10px;">' + (found.length ? found.length + ' SambaPOS sunucusu bulundu (port ' + r.port + ')' : 'Ağda SambaPOS sunucusu bulunamadı') + '</div>';
+            found.forEach(function (ip) {
+                var active = ip === r.current || (ip === '127.0.0.1' && r.current === 'localhost');
+                html += '<div class="eg-server' + (active ? ' is-active' : '') + '"><span>🖥️ ' + egEsc(ip) + (ip === '127.0.0.1' ? ' (bu bilgisayar)' : '') + (active ? ' · kullanılıyor' : '') + '</span>' +
+                    (active ? '✅' : '<button type="button" class="eg-btn eg-btn--green egUse" style="height:36px;font-size:13px;" data-ip="' + egEsc(ip) + '">KULLAN</button>') + '</div>';
+            });
+            $('#egScanResult').html(html);
+            $('.egUse').on('click', function () { egUseServer($(this).data('ip'), r.port); });
+        }).fail(function (xhr) {
+            var m = 'Tarama başarısız.'; try { m = JSON.parse(xhr.responseText).error || m; } catch (e) { }
+            $('#egScanResult').html('<div class="eg-help" style="padding:8px 2px;color:var(--eg-red);">' + egEsc(m) + '</div>');
+        });
+    }
+
+    // ---------------------------------------------------------------- Listeler
+    function egFillSelect(id, values, saved, fallback, allowEmpty) {
+        var $s = $('#' + id).empty();
+        if (allowEmpty) $s.append($('<option></option>').val('').text('(yok)'));
+        (values || []).forEach(function (v) { $s.append($('<option></option>').val(v).text(v)); });
+        var chosen = (saved && values.indexOf(saved) !== -1) ? saved : null;
+        if (!chosen && fallback) { var m = values.find(function (v) { return fallback.test(v); }); if (m) chosen = m; }
+        if (!chosen && !allowEmpty && values.length) chosen = values[0];
+        $s.val(chosen || '');
+    }
+    function egFillChecklist(hostId, values, selected, notes) {
+        var $h = $('#' + hostId).empty();
+        if (!values.length) { $h.html('<div class="eg-help" style="padding:10px 0;">Liste boş.</div>'); return; }
+        values.forEach(function (v, i) {
+            var $l = $('<label class="eg-check"></label>');
+            $l.append($('<input type="checkbox">').val(v).prop('checked', selected.indexOf(v) !== -1));
+            $l.append($('<span></span>').text(v));
+            if (notes && notes[v]) $l.append($('<small></small>').text(notes[v]));
+            $h.append($l);
+        });
+    }
+    function egReadChecklist(hostId) {
+        var out = [];
+        $('#' + hostId + ' input:checked').each(function () { out.push($(this).val()); });
+        return out;
+    }
+    function egLoadOptions() {
+        $.getJSON('/api/admin/terminal-config-options').done(function (d) {
+            egOptions = d;
+            egFillSelect('terminal', d.terminals || [], storage.getItem('terminal'));
+            egFillSelect('department', d.departments || [], storage.getItem('department'), /restoran/i);
+            egFillSelect('ticket', d.ticketTypes || [], storage.getItem('ticketType'), /adisyon/i);
+            egFillSelect('menu', d.menus || [], storage.getItem('menu'));
+            var screens = d.entityScreens || [];
+            var $e = $('#entity').empty();
+            screens.forEach(function (s) { $e.append($('<option></option>').val(s.name).attr('data-type', s.entityType || '').text(s.name + (s.entityType ? '  (' + s.entityType + ')' : ''))); });
+            var names = screens.map(function (s) { return s.name; });
+            var savedE = storage.getItem('entityScreen');
+            var chosenE = (savedE && names.indexOf(savedE) !== -1) ? savedE : null;
+            if (!chosenE) { var m = screens.find(function (s) { return /masa/i.test(s.name) || /masa/i.test(s.entityType || ''); }); if (m) chosenE = m.name; }
+            if (chosenE) $e.val(chosenE);
+            $e.off('change').on('change', function () { $('#entityTypeLabel').text($(this).find(':selected').attr('data-type') || '-'); }).trigger('change');
+
+            // sekmeler: ozel secim yapilmissa o, yoksa bos (= otomatik)
+            var tabSel = storage.getItem('entityScreenTabsCustom') ? (egJsonList('entityScreenTabs') || []) : [];
+            var notes = {};
+            screens.forEach(function (s) { notes[s.name] = s.entityType || ''; });
+            egFillChecklist('entityScreenChecklist', names, tabSel, notes);
+
+            // otomasyon komutlari (+ daha once elle eklenmis olanlar)
+            var autos = (d.automationCommands || []).slice();
+            var allowed = egJsonList('automationCommandsAllowed');
+            (allowed || []).forEach(function (n) { if (autos.indexOf(n) === -1) autos.push(n); });
+            egFillChecklist('automationChecklist', autos, allowed || autos);
+            $('#automationDatalist').empty();
+            autos.forEach(function (v) { $('#automationDatalist').append($('<option></option>').val(v)); });
+            var savedA = storage.getItem('automation');
+            if (!savedA) savedA = autos.find(function (v) { return /^hesap yaz$/i.test(v); }) || autos[0] || '';
+            $('#automation').val(savedA);
+
+            // odeme
+            var pts = d.paymentTypes || [];
+            egFillSelect('fastPayment1', pts, storage.getItem('fastPayment1'), /nakit/i, true);
+            egFillSelect('fastPayment2', pts, storage.getItem('fastPayment2'), /kredi/i, true);
+            var restricted = d.paymentRestrictedRoles || [];
+            var roles = (d.userRoles || []).slice();
+            restricted.forEach(function (r) { if (roles.indexOf(r) === -1 && !roles.some(function (x) { return x.toLocaleLowerCase('tr') === String(r).toLocaleLowerCase('tr'); })) roles.push(r); });
+            var restrictedSel = roles.filter(function (r) { return restricted.some(function (x) { return String(x).toLocaleLowerCase('tr') === r.toLocaleLowerCase('tr'); }); });
+            egFillChecklist('restrictedRolesChecklist', roles, restrictedSel);
+        }).fail(function (xhr) {
+            var m = 'Veritabanından listeler alınamadı.';
+            try { m = JSON.parse(xhr.responseText).error || m; } catch (e) { }
+            $('#egCfgError').text(m + ' Alanları elle yazabilirsiniz.').show();
+            // Elle giris: select yerine yazilabilir kutular
+            [['terminal', 'terminal'], ['department', 'department'], ['ticket', 'ticketType'], ['menu', 'menu'], ['entity', 'entityScreen']].forEach(function (p) {
+                $('#' + p[0]).replaceWith($('<input class="eg-input">').attr('id', p[0]).val(storage.getItem(p[1]) || ''));
+            });
+            $('#automation').val(storage.getItem('automation') || 'Hesap Yaz');
+        });
+    }
+
+    function egLoadLocalValues() {
+        $('#ticketTag').val(storage.getItem('ticketTag') || '');
+        $('#soru').prop('checked', !!storage.getItem('sorulsun'));
+        $('#exit').prop('checked', !!storage.getItem('exit'));
+        $('#hapticFeedback').prop('checked', storage.getItem('hapticFeedback') === 'evet');
+        $('#tableColumns').val(storage.getItem('tableColumns') || '3');
+        $('#staleTableMinutes').val(storage.getItem('staleTableMinutes') || '30');
+    }
+
+    // ---------------------------------------------------------------- Kaydet (bu cihaz + TUM cihazlar)
+    function egSave() {
+        var entityOpt = $('#entity').is('select') ? $('#entity').find(':selected') : null;
+        var s = {
+            terminal: $('#terminal').val() || '',
+            department: $('#department').val() || '',
+            ticketType: $('#ticket').val() || '',
+            menu: $('#menu').val() || '',
+            entityScreen: $('#entity').val() || '',
+            entityType: entityOpt ? (entityOpt.attr('data-type') || '') : (storage.getItem('entityType') || ''),
+            automation: ($('#automation').val() || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean).join(',') || 'Hesap Yaz',
+            ticketTag: $('#ticketTag').val() || '',
+            sorulsun: $('#soru').is(':checked') ? 'evet' : '',
+            exit: $('#exit').is(':checked') ? 'evet' : '',
+            hapticFeedback: $('#hapticFeedback').is(':checked') ? 'evet' : '',
+            tableColumns: $('#tableColumns').val() || '3',
+            staleTableMinutes: $('#staleTableMinutes').val() || '0',
+            fastPayment1: $('#fastPayment1').val() || '',
+            fastPayment2: $('#fastPayment2').val() || ''
+        };
+        if (!s.terminal || !s.department || !s.ticketType || !s.menu || !s.entityScreen) {
+            egToast('Terminal, departman, adisyon tipi, menü ve varlık ekranı seçilmeli.');
+            return;
+        }
+        if ($('#automationChecklist input').length) s.automationCommandsAllowed = JSON.stringify(egReadChecklist('automationChecklist'));
+        var tabs = egReadChecklist('entityScreenChecklist');
+        if (tabs.length) { s.entityScreenTabs = JSON.stringify(tabs); s.entityScreenTabsCustom = '1'; }
+        else { s.entityScreenTabsCustom = ''; }
+        if ($('#restrictedRolesChecklist input').length) s.paymentRestrictedRoles = JSON.stringify(egReadChecklist('restrictedRolesChecklist'));
+
+        // Terminal/departman/adisyon tipi degisirse eski terminal kaydi girisTEN sonra kapatilir (index.html)
+        var changed = s.terminal !== storage.getItem('terminal') || s.department !== storage.getItem('department') || s.ticketType !== storage.getItem('ticketType');
+        $('#egSaveBtn').prop('disabled', true).text('Kaydediliyor…');
+        egSaveSettingsToServer(s, function (ok, err) {
+            $('#egSaveBtn').prop('disabled', false).text('💾 Kaydet');
+            if (!ok) {
+                if (/yönetici/i.test(err || '')) { egToast('Kilit süresi doldu, PIN tekrar girin.'); egShowGate(); return; }
+                alert('Kaydedilemedi: ' + err);
+                return;
+            }
+            Object.keys(s).forEach(function (k) { if (s[k] === '') storage.removeItem(k); else storage.setItem(k, s[k]); });
+            if (changed && storage.getItem('terminalId')) { storage.setItem('egStaleTerminalId', storage.getItem('terminalId')); storage.removeItem('terminalId'); }
+            storage.setItem('licence', 'true');
+            egToast('Kaydedildi - tüm garson cihazlarına uygulanacak.');
+            setTimeout(function () { window.location = 'index.html'; }, 1200);
+        });
+    }
+
+    function egInit() {
+        $('#egCfg, #egSaveBar').show();
+        egLoadLocalValues();
+        egLoadOptions();
+        egRefreshStatus();
+    }
+
+    $(function () {
+        $('.egThemeBtn').text(document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙')
+            .on('click', function () { var d = egToggleTheme(); $('.egThemeBtn').text(d ? '☀️' : '🌙'); });
+        $('#egGateOk').on('click', egUnlock);
+        $(document).on('keydown', function (e) {
+            if (!$('#egGate').is(':visible')) return;
+            if (e.key >= '0' && e.key <= '9') { egGatePin += e.key; egGateRender(); }
+            else if (e.key === 'Backspace') { egGatePin = egGatePin.slice(0, -1); egGateRender(); }
+            else if (e.key === 'Enter') egUnlock();
+        });
+        $('#egLockBtn').on('click', function () {
+            $.ajax({ url: '/api/admin/lock', method: 'POST' }).always(function () { window.location = 'index.html'; });
+        });
+        $('#egScanBtn').on('click', egScan);
+        $('#egRetestBtn').on('click', egRefreshStatus);
+        $('#egManualUse').on('click', function () {
+            var h = $('#egManualHost').val().trim();
+            var p = parseInt($('#egManualPort').val(), 10) || undefined;
+            if (h) egUseServer(h, p);
+        });
+        $('#egAutoAll').on('click', function () { $('#automationChecklist input').prop('checked', true); });
+        $('#egAutoNone').on('click', function () { $('#automationChecklist input').prop('checked', false); });
+        $('#egAutoManualAdd').on('click', function () {
+            var v = $('#egAutoManual').val().trim();
+            if (!v) return;
+            var exists = $('#automationChecklist input').filter(function () { return $(this).val() === v; });
+            if (exists.length) exists.prop('checked', true);
+            else {
+                if ($('#automationChecklist .eg-check').length === 0) $('#automationChecklist').empty();
+                $('#automationChecklist').append($('<label class="eg-check"></label>').append($('<input type="checkbox" checked>').val(v), $('<span></span>').text(v), $('<small></small>').text('elle eklendi')));
+                $('#automationDatalist').append($('<option></option>').val(v));
+            }
+            $('#egAutoManual').val('');
+        });
+        $('#egSaveBtn').on('click', egSave);
+        $('#egResetDevice').on('click', function () {
+            if (!confirm('Bu cihazdaki kayıtlı bilgiler temizlenecek (terminal kaydı, önbellek). Sunucudaki ayarlar korunur. Devam edilsin mi?')) return;
+            var keep = { egTheme: storage.getItem('egTheme'), web_device_uuid: storage.getItem('web_device_uuid') };
+            storage.clear();
+            Object.keys(keep).forEach(function (k) { if (keep[k]) storage.setItem(k, keep[k]); });
+            egToast('Bu cihaz temizlendi.');
+            setTimeout(function () { window.location = 'index.html'; }, 900);
+        });
+        window.addEventListener('online', egRefreshStatus);
+        window.addEventListener('offline', egRefreshStatus);
+
+        $.getJSON('/api/admin/status').done(function (s) { if (s.unlocked) egInit(); else egShowGate(); })
+            .fail(function () { egShowGate(); });
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!-- EnsariPOS Garson Direkt (02.10.2026): exe/bulut OLMADAN dogrudan SambaPOS mesaj sunucusuna
+     (IP:9000) baglanan bagimsiz garson APK'si. Ekranlar ..\..\www'dan (mevcut Garson) derleme
+     sirasinda kopyalanir, ..\ek\bagimsiz.js baglanti katmanini telefonda saglar.
+     Mevcut EnsariPOS Garson APK'si (com.ensaripos.garson) ile AYNI telefonda yan yana kurulabilir.
+     Derleme: ..\derle.ps1 -> ..\dist\EnsariGarsonDirekt.apk -->
+<widget id="com.ensaripos.garsondirekt" version="1.1.0" xmlns="http://www.w3.org/ns/widgets" xmlns:android="http://schemas.android.com/apk/res/android" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>Garson Direkt</name>
+    <description>EnsariPOS Garson Direkt - SambaPOS'a dogrudan baglanan garson terminali</description>
+    <author email="destek@ornek-alanadi.com" href="https://ornek-alanadi.com">EnsariPOS</author>
+    <content src="index.html" />
+    <access origin="*" />
+    <allow-navigation href="http://localhost/*" />
+    <allow-intent href="http://*/*" />
+    <allow-intent href="https://*/*" />
+    <allow-intent href="tel:*" />
+    <!-- sayfa http://localhost'tan acilir: SambaPOS'a (http://IP:9000) istekler "mixed content" olmaz -->
+    <preference name="scheme" value="http" />
+    <preference name="hostname" value="localhost" />
+    <preference name="Orientation" value="portrait" />
+    <preference name="AndroidXEnabled" value="true" />
+    <preference name="MixedContentMode" value="0" />
+    <preference name="BackgroundColor" value="0xff142049" />
+    <preference name="AndroidWindowSplashScreenBackground" value="#142049" />
+    <preference name="AndroidWindowSplashScreenAnimatedIcon" value="res/icon/xxxhdpi-fg.png" />
+    <platform name="android">
+        <allow-intent href="market:*" />
+        <edit-config file="app/src/main/AndroidManifest.xml" mode="merge" target="/manifest/application">
+            <application android:usesCleartextTraffic="true" />
+        </edit-config>
+        <icon density="ldpi" src="res/icon/ldpi.png" foreground="res/icon/ldpi-fg.png" background="res/icon/ldpi-bg.png" />
+        <icon density="mdpi" src="res/icon/mdpi.png" foreground="res/icon/mdpi-fg.png" background="res/icon/mdpi-bg.png" />
+        <icon density="hdpi" src="res/icon/hdpi.png" foreground="res/icon/hdpi-fg.png" background="res/icon/hdpi-bg.png" />
+        <icon density="xhdpi" src="res/icon/xhdpi.png" foreground="res/icon/xhdpi-fg.png" background="res/icon/xhdpi-bg.png" />
+        <icon density="xxhdpi" src="res/icon/xxhdpi.png" foreground="res/icon/xxhdpi-fg.png" background="res/icon/xxhdpi-bg.png" />
+        <icon density="xxxhdpi" src="res/icon/xxxhdpi.png" foreground="res/icon/xxxhdpi-fg.png" background="res/icon/xxxhdpi-bg.png" />
+    </platform>
+</widget>

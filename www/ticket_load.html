@@ -1,0 +1,2021 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title></title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#1b2440">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="icon" href="images/app-icon-192.png">
+    <link href="css/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/theme.css" rel="stylesheet" />
+    <link href="css/eg-app.css" rel="stylesheet" />
+    <script src="scripts/eg-settings.js"></script>
+    <script src="scripts/Jquery.min.js"></script>
+    <script src="scripts/jquery.signalR-2.2.0.min.js"></script>
+    <script src="scripts/Queries.js"></script>
+    <script src="scripts/eg-extra.js"></script>
+    <script src="scripts/bootstrap.min.js"></script>
+    <script src="scripts/eg-ui.js"></script>
+    <script src="cordova-shim.js"></script>
+    <script>
+        var storage = window.localStorage;
+        var hesapbtn = storage.getItem("automation");
+        var hesaps = hesapbtn.split(",");
+        var terminalID = storage.getItem("terminalId");
+        var masano = storage.getItem("Masa");
+        var selectlist = [];
+        /* 29.09.2026 duzeltmesi (kullanici bulgusu: "adisyonu actigin zaman
+           baska islem yapilmis diyor" - HER SEFERINDE, normal acilista bile).
+           KOK NEDEN: "ilkmi"/"ilkbakiye" bayragi bu SAYFAYA OZGU degil,
+           TARAYICI GENELINDE kalici (localStorage) - onceki bir ziyarette
+           kapat() DISINDA bir yoldan cikilmissa (Masa Tasi/Adisyon Ekle/Hesap
+           Yaz gibi dogrudan yonlendiren islemler "ilkmi"yi hic sifirlamiyordu)
+           bir SONRAKI adisyon acilisinda "ilkbakiye" hala ESKI adisyonun
+           tutari oluyor, kapat() da onu YENI adisyonun tutariyla kiyaslayinca
+           HER ZAMAN uyusmazlik buluyordu. Bu sayfa HER YUKLENDIGINDE (yeni bir
+           adisyon goruntulemeye basladiginda) bayrak burada, en basta,
+           sifirlanir - "ilk bakiye" artik her zaman BU ziyaretin gercek ilk
+           degeri olur. */
+        storage.setItem('ilkmi', 0);
+        //Ekrana listeleme fonksiyonu
+        function setTicket(ticket, sec) {
+            var ilkmi = storage.getItem("ilkmi");
+            if (ilkmi != 1)
+            {
+                storage.setItem("ilkbakiye", ticket.totalAmount);
+                storage.setItem("ilkmi", 1);
+                console.log("İlk Bakiye : " + ticket.totalAmount);
+            }
+
+           
+
+
+            var ticketid = ticket.id;
+            storage.setItem("ticketid", ticketid);
+            /* 30.09.2026: "baska kullanici degistirmis" kontrolunun TABANI - adisyonun
+               VERITABANINDAKI tutari, masa ACILDIGI anda bir kez alinir (index.html her
+               masa acilisinda egDbBase'i siler). Sayfa ticket.html'den (Siparis Ekle)
+               donunce TEKRAR alinmaz - kaydedilmemis yeni urunler tabani bozmaz. */
+            if (ticketid && !storage.getItem('egDbBase')) {
+                getTicket(ticketid, function (dbT) {
+                    storage.setItem('egDbBase', JSON.stringify({ id: String(ticketid), total: dbT ? Number(dbT.totalAmount) : null }));
+                });
+            }
+            var str = JSON.stringify(ticket);
+
+            console.log(str);
+            var ordercount=Object.keys(ticket.orders).length;
+            storage.setItem("ordercount", ordercount);
+
+            sec == null ? false : sec;
+            if (ticket.orders.length == 0 || !sec) {
+                //Eğer ürün yoksa sol menüdeki ürün butonları yerine adisyon butonları listelenir
+                mainButtons();
+
+            }
+            if (ticket.tags.length > 0) {
+                $.each(ticket.tags, function (key, item) {
+                    if (item.tagName != '') {
+                        $("#ticketTag").empty();
+                        $("#ticketTag").append('' + item.tagName + ':' + item.tag + '');
+                    }
+                })
+
+            }
+            //Adisyon notu ekrana basma işlemi
+            if (ticket.note != null) {
+                $("#adsnot").empty();
+                $("#adsnot").append(storage.getItem("ticket_note")+':' + ticket.note + '');
+            }
+            //Adisyondaki ürünlerin ekrana listelenmesi bölümü
+            if (ticket != null) {
+                {
+                    $("#value").html(storage.getItem("total")+': ' + ticket.totalAmount.toFixed(2) + '');
+                }
+
+                $.each(ticket.orders, function (key, item) {
+                    var number = item.number;
+                    var yenidate = new Date(item.date);
+                    var hours = yenidate.getHours();
+                    var minutes = yenidate.getMinutes();
+                    var seconds = yenidate.getSeconds();
+                    if (hours < 10) hours = "0" + hours;
+                    if (minutes < 10) minutes = "0" + minutes;
+                    var iddate = hours + "" + minutes+""+seconds;
+                    var divnumber = $("#" + iddate + "").length;
+
+                    var itemnumber = "";
+
+                    if (typeof item.number != "undefined") 
+                        {
+                        itemnumber = item.number;
+                        }
+                    else
+                    {
+                        itemnumber = "";
+                        }
+
+                   
+                    if (isNaN(hours))
+                    {
+                        var lastdate ="";
+                    }
+                    else
+                    {
+                        var lastdate = hours + ":" + minutes;
+                    }
+                   
+                    var secilimi = false;
+                    var pricex = item.price.toFixed(2);//Fiyat formatının .00 şeklinde düzenlenmesi
+                    //Eğer ürünün adeti birden fazla ise başına x ile belirtme
+                    var itemname = item.name.length > 20 ? item.name.slice(0, 15) + "..." : item.name;
+                    if (divnumber == 0) {
+                        if (number == 0) {
+                             {
+                                 $("#Orders").append('<li id=' + iddate + ' style="background-color:transparent;font-family:italic;" class="hed">' + storage.getItem("neworder") + '</li>');
+                            }
+                        } else {
+                             {
+                                 $("#Orders").append('<li id=' + iddate + ' style="background-color:transparent;font-family:italic;" class="hed">' + storage.getItem("orderno") + ':' + itemnumber + '<span class="spn">' + lastdate + '</span></li>');
+                            }
+
+                        }
+
+                    }
+                    if (item.quantity != 1) {
+                        var price = item.quantity * item.price;
+                        var pricefix = price.toFixed(2);
+                        //Porsiyon varsa satırda gözükmesi
+                        if (item.portion != 'Normal') {
+                            $("#Orders").append('<li class="list-group-item oBtn" data-quantity=' + item.quantity + ' data-uid=' + item.uid + ' data-state=0 id=' + key + '>' + item.quantity + 'x' + itemname + ' ' + item.portion + ' <span class="spn">' + pricefix + '</span></li>');
+                        } else {
+                            $("#Orders").append('<li class="list-group-item oBtn" data-quantity=' + item.quantity + ' data-uid=' + item.uid + ' data-state=0 id=' + key + '>' + item.quantity + 'x' + itemname + ' <span class="spn">' + pricefix + '</span></li>');
+                        }
+                    } else {
+                        if (item.portion != 'Normal') {
+                            $("#Orders").append('<li class="list-group-item oBtn" data-quantity=' + item.quantity + ' data-uid=' + item.uid + '  id=' + key + '>' + itemname + ' ' + item.portion + ' <span class="spn">' + pricex + '</span></li>');
+                        } else {
+                            $("#Orders").append('<li class="list-group-item oBtn" data-quantity=' + item.quantity + ' data-uid=' + item.uid + ' data-state=0 id=' + key + '>' + itemname + ' <span class="spn">' + pricex + '</span></li>');
+                        }
+                    }
+
+                    //burda seçili olanların tekrar seçilmesi sağlanır
+                    if (sec) {
+                        for (var i = 0; i < selectlist.length; i++) {
+                            if (item.uid == selectlist[i]) {
+                                secilimi = true;
+                                $('#' + key + '.oBtn').addClass("selected");
+                            }
+                        }
+                    }
+                    //Ürünün tagları ekrana basılır
+                    if (item.tags.length > 0) {
+                        for (var i = 0; i < item.tags.length; i++) {
+                            var name = item.tags[i].tag;
+                            var pricex = item.tags[i].price.toFixed(2);
+                            var quantity = item.tags[i].quantity;
+                            if (quantity > 1) {
+                                pricex = quantity * pricex;
+                                pricex = pricex.toFixed(2);
+                                $('#' + key + '.oBtn').append('<li class="tags">' + quantity + 'x' + name + '<span class="spn">' + pricex + '</span></li>');
+                            } else {
+                                $('#' + key + '.oBtn').append('<li class="tags">' + name + '<span class="spn">' + pricex + '</span></li>');
+                            }
+
+                            //if (note != '') {
+                            //    $('#' + key + '.oBtn').append('<li class="tags">' + name + ':'+note+'<span class="spn">' + pricex + '</span></li>');
+                            //} else {
+
+                            //}
+
+                        }
+                    }
+                    var state;
+                    var iadestate;
+                    var ikramstate;
+                    //Eğer configde seçilen dil ingilizce ise değişim
+                    {
+                        state = storage.getItem("submitted");
+                        iadestate = storage.getItem("void");
+                        ikramstate = storage.getItem("gift");
+                    }
+                    var iadedurum = false;
+                    var ikramdurum = false;
+                    var gonderdurum = false;
+                    var ikramdesc = "";
+                    var iadedesc = "";
+                    $.each(item.states, function (key, item) {
+                        if (item.stateName == "Status" && item.state == state) {
+                            gonderdurum = true;
+                        } else if (item.stateName == "GStatus" && item.state == iadestate) {
+                            iadedesc = item.stateValue != "" ? item.stateValue : null;
+                            iadedurum = true;
+                        } else if (item.stateName == "GStatus" && item.state == ikramstate) {
+                            ikramdesc = item.stateValue != "" ? item.stateValue : null;
+                            ikramdurum = true;
+                        }
+                    })
+                    if (iadedurum) {
+                        //data-state 1
+                        $('#' + key + '.oBtn').removeClass("ikram");
+                        $('#' + key + '.oBtn').css("background-color", "#e6e6e6");
+                        $('#' + key + '.oBtn').addClass("iade");
+                        var labelcolor = $('#' + key + '.oBtn ').css("color");
+                        $('#' + key + '.oBtn').attr("data-state", 1);
+                        if (iadedesc != null) {
+                            $('#' + key + '.oBtn')
+                                .append('<li style="text-decoration: none!important;color:' +
+                                    labelcolor +
+                                    '" class="durum">' +
+                                    iadestate +
+                                    ':' + iadedesc + '</li>');
+                        } else {
+                            $('#' + key + '.oBtn').append('<li style="text-decoration: none!important;color:' + labelcolor + '" class="durum">' + iadestate + '</li>');
+                        }
+                        gonderdurum = true;
+                    }
+                    if (ikramdurum) {
+                        //data-state 2
+                        $('#' + key + '.oBtn').removeClass("iade");
+                        $('#' + key + '.oBtn').css("background-color", "#e6e6e6");
+                        $('#' + key + '.oBtn').addClass("ikram");
+                        var labelcolor = $('#' + key + '.oBtn ').css("color");
+                        $('#' + key + '.oBtn').attr("data-state", 2);
+                        if (ikramdesc != null) {
+                            $('#' + key + '.oBtn')
+                                .append('<li style="text-decoration: none!important;color:' +
+                                    labelcolor +
+                                    '" class="durum">' +
+                                    ikramstate +
+                                    ':' + ikramdesc + '</li>');
+                        } else {
+                            $('#' + key + '.oBtn').append('<li style="text-decoration: none!important;color:' + labelcolor + '" class="durum">' + ikramstate + '</li>');
+                        }
+
+                    }
+                    //Burda seçeceğimiz satırın arka plan renginin uyarlanması
+                    if (gonderdurum) {
+                        $('#' + key + '.oBtn').addClass("dsbldrm");
+                        $('#' + key + '.oBtn .durum').css("background-color", "#e6e6e6");
+                        var labelcolor = $('#' + key + '.oBtn ').css("color");
+                        $('#' + key + '.oBtn').append('<li style="text-decoration: none!important;color:' + labelcolor + ';background-color:#e6e6e6" class="gndr">' + state + '</li>');
+                        $('#' + key + '.oBtn').css("background-color", "#e6e6e6");
+                        var color = $('#' + key + '.oBtn').css("background-color");
+                        $('#' + key + '.oBtn .tags').css("background-color", color);
+                    } else {
+                        if (secilimi) {
+                            $('#' + key + '.oBtn .durum').css("color", "white");
+                            $('#' + key + '.oBtn .iade').css("color", "white");
+                            $('#' + key + '.oBtn .ikram').css("color", "white");
+                            $('#' + key + '.oBtn .tags').css("color", "white");
+                            $('#' + key + '.oBtn .tags').css("background-color", "#3498db");
+                            $('#' + key + '.oBtn .iade').css("background-color", "#3498db");
+                            $('#' + key + '.oBtn .ikram').css("background-color", "#3498db");
+                            $('#' + key + '.oBtn .durum').css("background-color", "#3498db");
+                        } else {
+                            $('#' + key + '.oBtn .tags').css("background-color", "white");
+                            $('#' + key + '.oBtn .durum').css("background-color", "white");
+                            $('#' + key + '.oBtn').css("background-color", "white");
+                        }
+                    }
+                });
+            } else {
+                alert(storage.getItem("technical_problem"));
+            }
+            //Otomatik son satıra inme
+            sec = false;
+            $('#Orders').animate({ scrollTop: $('#Orders').prop("scrollHeight") }, 10);
+        }
+        //Masa numarası ekrana basma
+        /* 29.09.2026 UCUNCU duzeltme (kullanici bulgusu, canli test: "hesap
+           yaz deyince islemlerden adisyondan cikiyor, hesap yaziyor ama
+           tekrar girince icerigi bos gorunuyor"). KOK NEDEN: bu fonksiyon
+           SADECE ekrandan cikip masa listesine donuyordu - hesap()'in
+           AKSINE closeTerminalTicket() HIC cagirmiyordu. SambaPOS'ta adisyon
+           GERCEKTEN kapanmamis oluyordu (sadece otomasyon komutu calismis
+           oluyordu), siparislerin durumu (state) degisince de tekrar
+           acildiginda setTicket()'in "New" filtresine uymayip BOS
+           gorunuyordu. Artik hesap() ile AYNI: once GERCEKTEN
+           closeTerminalTicket cagrilir, SONRA masa listesine donulur. */
+        function egOnTicketClosedByCommand() {
+            closeTerminalTicket(terminalID, function () {
+                alert('İşlem tamamlandı, adisyon kapatıldı.');
+                storage.removeItem('ticketid');
+                storage.removeItem('lastorderuid');
+                storage.setItem('ilkmi', 0);
+                postRefresh(function () { window.location = "index.html"; });
+            });
+        }
+        function masanumarası() {
+            var ticketid = storage.getItem('ticketId');
+            var masaadi = storage.getItem("Masa");
+            if (ticketid == null)
+            {
+                $("#masanumara").empty();
+                $("#masanumara").append('<span style="font-size="medium">' + masaadi + '</span>');
+            }
+            else
+            {
+                    $("#masanumara").empty();
+                    $("#masanumara").append('<span class="msNo" style="font-size="medium">' + masaadi + ' ' + storage.getItem("ticket") + ':' + ticketid + '</span>');
+                
+            }
+        }
+        function onDeviceReady() {
+            document.addEventListener("backbutton", yourCallbackFunction, false);
+        }
+        function yourCallbackFunction() {
+
+        }
+        /* 29.09.2026, kullanici istegi: "arayuz" - referans gosterilen
+           Islemler panelindeki gibi her satira anlamli bir ikon/renk
+           vermek icin, buton METNINE bakarak (isim SambaPOS'tan/restorana
+           gore degisebildigi icin sabit bir liste yerine anahtar kelime
+           eslestirme) data-icon + sol serit rengi atanir. Buton metni/
+           onclick islevi HIC DEGISMEDI. */
+        function egStyleActionButtons() {
+            var rules = [
+                [/hesap ?yaz|print ?bill/i, '🖨️', '#3498db'],
+                [/nakit|cash/i, '💵', '#27ae60'],
+                [/kredi ?kart|card/i, '💳', '#3498db'],
+                [/ödeme|odeme|payment/i, '💳', '#27ae60'],
+                [/adisyon ?ekle/i, '➕', '#27ae60'],
+                [/sipariş ?ekle|siparis ?ekle/i, '➕', '#6c3fa8'],
+                [/adisyon ?notu/i, '💬', '#ff7a30'],
+                [/masa ?değiştir|masa ?degistir/i, '🔀', '#6c3fa8'],
+                [/etiket|tag/i, '🏷️', '#f1c40f'],
+                [/sil|iptal/i, '🚫', '#e74c3c'],
+                [/ikram/i, '🎁', '#6c3fa8'],
+                [/iade/i, '↩️', '#e74c3c']
+            ];
+            $('#event .fBtn').each(function () {
+                var $b = $(this);
+                if ($b.attr('id') === 'arti' || $b.attr('id') === 'eksi') return;
+                var text = $b.is('input') ? ($b.val() || '') : $b.text();
+                var match = rules.find(function (r) { return r[0].test(text); });
+                $b.attr('data-icon', match ? match[1] : '🔘');
+                $b.css('border-left-color', match ? match[2] : '#8a95a5');
+            });
+        }
+        function mainButtons() {
+             {
+                 $(".fKpt").text(storage.getItem("close"));
+                $("#event").empty();
+                $.each(hesaps, function (key, item) {
+                    $("#event").append('<button class="btn btn-default fBtn" onclick=hesap(this)>' + item + '</button>');
+                })
+                $("#event").append('<button class="btn btn-default fBtn" onclick=adekle()>'+storage.getItem("add_ticket")+'</button><button class="btn btn-default fBtn" onclick=ekle()>'+storage.getItem("add_order")+'</button><button class="btn btn-default fBtn" onclick=adsnot()>'+storage.getItem("ticket_note")+'</button><button class="btn btn-default fBtn" onclick=tasi()>'+storage.getItem("change_table")+'</button>');
+
+                if (storage.getItem("ticketTag")) {
+                    $("#event").append('<button class="btn btn-default fBtn" onclick=ticketTag(this)>' + storage.getItem("ticketTag") + '</button>');
+                }
+                if (typeof egAppendExtraCommands === 'function') { egAppendExtraCommands(); }
+                egStyleActionButtons();
+            }
+
+        }
+        function subButtons() {
+                $("#event").empty();
+                $("#event").append('<button id="arti" class="btn btn-default fBtn" onclick=arti()>+</button><button id="eksi" class="btn btn-default fBtn" onclick=eksi() disabled>-</button><button class="btn btn-default fBtn" id="sil" onclick=sil()>'+storage.getItem("cancel")+'</button>');
+                egStyleActionButtons();
+        }
+        $(document).ready(function () {
+            document.addEventListener("deviceready", onDeviceReady, false);
+            $(".user").append(config.userName);
+            //Seçili dile göre adisyon butonlarının yazılarının belirlenmesi
+            mainButtons();
+            masanumarası();
+          
+            //Ürünlerden seçilme işlemi
+            $("#Orders").on('click', '.oBtn', function () {
+                var list = $("ul li");
+                var varmi = false;
+                var count = 0;
+                $.each(list, function (key, item) {
+                    if ($(item).hasClass('selected')) {
+                        varmi = true;
+                        count++;
+                    }
+                });
+                var uid = $(this).data("uid");
+                //Tıklanan ürün seçilmiş ise arkaplan rengi değişir ve listeden id si çıkartılır.
+                var a = $(this).hasClass('selected');
+                if ($(this).hasClass('selected')) {
+                    $(this).removeClass('selected');
+                    var uid = $(this).data("uid");
+                    var index = selectlist.indexOf(uid);
+                    selectlist.splice(index, 1);
+                    //selectlist.splice($.inArray(uid, selectlist), 1);
+                    var x = $(this).attr("id");
+                    var backgroundcolor = $('#' + x + '.oBtn ').css("background-color");
+                    var labelcolor = $('#' + x + '.oBtn ').css("color");
+                    $('#' + x + '.oBtn .tags').css("background-color", backgroundcolor);
+                    $('#' + x + '.oBtn .durum').css("background-color", "#e6e6e6");
+                    $('#' + x + '.oBtn .gndr').css("background-color", "#e6e6e6");
+                    $('#' + x + '.oBtn .gndr').css("color", labelcolor);
+                    $('#' + x + '.oBtn .durum').css("color", "black");
+                    $('#' + x + '.oBtn .tags').css("color", "#3498db");
+                    if (varmi && count == 1) {
+                        mainButtons();
+                        if ($(this).hasClass('dsbldrm')) {
+                            $("#arti").prop("disabled", true)
+                            $("#eksi").prop("disabled", true)
+                            $("#sil").prop("disabled", true)
+                        }
+                    } else {
+                        subButtons();
+                        if ($(this).hasClass('dsbldrm')) {
+                            $("#arti").prop("disabled", true)
+                            $("#eksi").prop("disabled", true)
+                            $("#sil").prop("disabled", true)
+                        }
+                    }
+                } else {
+                    //Seçili değil ise liste id si eklenir ve arkaplan değişir
+                    $(this).addClass('selected');
+                    var uid = $(this).data("uid");
+                    selectlist.push(uid);
+                    var x = $(this).attr("id");
+                    $('#' + x + '.oBtn .durum').css("background-color", "#3498db");
+                    $('#' + x + '.oBtn .tags').css("background-color", "#3498db");
+                    $('#' + x + '.oBtn .gndr').css("background-color", "#3498db");
+                    $('#' + x + '.oBtn .durum').css("color", "white");
+                    $('#' + x + '.oBtn .tags').css("color", "white");
+                    $('#' + x + '.oBtn .gndr').css("color", "white");
+                    subButtons();
+                    if ($(this).hasClass('dsbldrm')) {
+                        $("#arti").prop("disabled", true)
+                        $("#eksi").prop("disabled", true)
+                        $("#sil").prop("disabled", true)
+                    }
+                }
+
+                var sayac = $(this).data("quantity");
+                if (sayac > 1) {
+                    $("#eksi").prop('disabled', false);
+                } else {
+                    $("#eksi").prop('disabled', true);
+                }
+                getTerminalOrderButton(terminalID, selectlist);
+            });
+            $(document).on('click', '.iBtn', function () {
+                $("#model4").empty();
+                var stringvalues = $(this).data("values");
+                var execname = $(this).data("execname");
+                var values = stringvalues.split(",");
+                console.log(values);
+                console.log(execname);
+                if (values.length > 1) {
+                    $("#model4")
+                        .append('<div id="myModal4" class="modal fade" role="dialog"><div class="modal-dialog"><!-- Modal content--><div class="modal-content"><div class="modal-header"><h4 id="sbp" style="text-align:center">'+storage.getItem("select_reasons")+'</h3></div><div class="modal-body" id="body"></div><div class="modal-footer"><button type="button" class="btn btn-danger clsBtn" data-dismiss="modal">'+storage.getItem("close")+'</button></div></div></div></div>');
+                   
+                    $("#body").html(storage.getItem("select_reasons"));
+                    
+                    for (var i = 0; i < values.length; i++) {
+                        $("#body")
+                            .append('<input type="button" style="width:100%;font-size:14px;margin-top:1px" class="btn btn-info value" value="' + values[i] + '" />');
+                    }
+                    $("#myModal4").modal('show');
+                    $(document).on('click', '.value', function () {
+                        var deger = $(this).val();
+                        for (var i = 0; i < selectlist.length; i++) {
+                            executeAutomationCommandForTerminalTicket(terminalID,
+                                selectlist[i],
+                                execname,
+                                deger,
+                                function (result) {
+                                    console.log(result);
+                                    egHandleTicketResult(result, execname, function (r) {
+                                        $("#Orders").empty();
+                                        setTicket(r);
+                                    }, egOnTicketClosedByCommand);
+                                })
+                        }
+                        $("#myModal4").modal('hide');
+                    })
+                } else {
+                    console.log(selectlist);
+                    if (selectlist.length > 0) {
+                        for (var i = 0; i < selectlist.length; i++) {
+                            executeAutomationCommandForTerminalTicket(terminalID, selectlist[i], execname, "", function (result) {
+                                console.log(result);
+                                egHandleTicketResult(result, execname, function (r) {
+                                    $("#Orders").empty();
+                                    setTicket(r);
+                                }, egOnTicketClosedByCommand);
+                            });
+                        }
+                    } else {
+
+                        executeAutomationCommandForTerminalTicket(terminalID, ticketuid, execname, "", function (result) {
+                            egHandleTicketResult(result, execname, function (r) {
+                                postRefresh(function (callback) {
+                                    $("#Orders").empty();
+                                    setTicket(r);
+                                });
+                            }, egOnTicketClosedByCommand);
+                        });
+                    }
+                }
+
+            });
+            //Bu ekrana gelindiğinde seçili olan adisyonun açılması işlemi
+            getTerminalTicket(terminalID, function (ticket) {
+                ticketuid = ticket.uid;
+              
+                    console.log("burada");
+                    storage.setItem("totalamount", ticket.totalAmount);
+                    console.log("refresh edildiğinde" + ticket.totalAmount);
+                    var terminalID = storage.getItem('terminalId');
+                    var str2 = storage.getItem('totalamount');
+                    console.log(str2);
+                    setTicket(ticket);
+
+
+                    if (ticket != null) {
+
+                        if (ticket.id > 0)
+                        {
+
+                      
+                        getTicket(ticket.id, function (ticket2) {
+                            {
+                                $("#value").html(storage.getItem("total")+': ' + ticket2.totalAmount.toFixed(2) + '');
+                            }
+                        });
+                        }
+                    }
+                  
+               
+            });
+        });
+        var ticketuid;
+        var uid;
+        //seçilen ürünün adetini arttırma
+        function arti() {
+            var list = $("ul li.selected");
+            console.log(list);
+            $.each(list, function (key, item) {
+                if ($(item).hasClass('selected')) {
+                    uid = $(item).data("uid");
+                    var quantity = $(item).data("quantity");
+                    quantity++;
+                    $("#eksi").prop('disabled', false);
+                    updateOrderQuantityOfTerminalTicket(terminalID, uid, quantity, function (result) {
+                        $("#Orders").empty();
+                        setTicket(result, true);
+                    });
+                }
+            });
+        }
+        //seçilen ürünün adetini azaltma
+        function eksi() {
+            var list = $("ul li");
+            $.each(list, function (key, item) {
+                if ($(item).hasClass('selected')) {
+                    uid = $(item).data("uid");
+                    var quantity = $(item).data("quantity");
+                    if (quantity > 1) {
+                        quantity--;
+                        $("#eksi").prop('disabled', false);
+                        updateOrderQuantityOfTerminalTicket(terminalID, uid, quantity, function (result) {
+                            $("#Orders").empty();
+                            setTicket(result, true);
+                        });
+                    } else {
+                        $("#eksi").prop('disabled', true);
+                    }
+                }
+            });
+        }
+        //seçilen ürünü silme
+        function sil() {
+            var list = $("ul li");
+            $.each(list, function (key, item) {
+                if ($(item).hasClass('selected')) {
+                    uid = $(item).data("uid");
+                    var quantity = $(item).data("quantity");
+                    cancelOrderOnTerminalTicket(terminalID, uid, function (result) {
+                        $("#Orders").empty();
+                        selectlist.pop(uid);
+                        setTicket(result);
+                    });
+                }
+            });
+        }
+        //ürün ekleme
+        function ekle() {
+            window.location = "ticket.html";
+            storage.setItem('load', 'var');
+            storage.setItem('urunekle', 'var');
+        }
+        //masa taşıma işlemi
+        function tasi() {
+            $("#model2").empty();
+            $("#model2").append('<div id="myModal2" class="modal fade" role="dialog"><div class="modal-dialog"><!-- Modal content--><div class="modal-content" ><div class="modal-header"><button type="button" class="close" data-dismiss="modal">&times;</button><h3 class="tag">'+storage.getItem("select_table")+'</h3></div><div id="Masalar" class="modal-body"></div><div class="modal-footer"><button type="button" class="btn btn-danger clsBtn" data-dismiss="modal">'+storage.getItem("close")+'</button></div></div></div></div>');
+            $(".modal-body").empty();
+            
+            $(".kBtn").val(storage.getItem("save"));
+            $(".clsBtn").html(storage.getItem("close"));
+            $(".tag").html(storage.getItem("select_table"));
+          
+            $("#myModal2").modal('show');
+            //Modele masaların listelenmesi
+            getEntityScreenItems(function (result) {
+                
+                result.forEach(function (item) {
+                    if (item.name == masano) {
+                        if (item.name.length > 16) 
+                        {
+
+                            $("#Masalar").append('<input type="button" class="btn btn-default mBBtn" style="width:19%;height:10vh;background-color:#3498db;;color:' + parseAlfaColor(item.labelColor) + ';" value="' + item.name + '"></input>');
+                        }
+                        else
+                        {
+                            $("#Masalar").append('<input type="button" class="btn btn-default mBtn" style="width:19%;height:10vh;background-color:#3498db;;color:' + parseAlfaColor(item.labelColor) + ';" value="' + item.name + '" ></input>');
+                        }
+                    }
+                    else {
+                        if (item.name.length > 16) {
+                            $("#Masalar").append('<input type="button" class="btn btn-default mBBtn" style="width:19%;height:10vh;background-color:' + parseAlfaColor(item.color) + ';color:' + parseAlfaColor(item.labelColor) + ';" value="' + item.name + '"></input>');
+                        } else {
+                            $("#Masalar").append('<input type="button" class="btn btn-default mBtn" style="width:19%;height:10vh;background-color:' + parseAlfaColor(item.color) + ';color:' + parseAlfaColor(item.labelColor) + ';" value="' + item.name + '" ></input>');
+                        }
+                    }
+                });
+
+                $(".mBtn").unbind().click(function () {
+                    changeEntityOfTerminalTicket(terminalID, this.value, function (result) {
+                        closeTerminalTicket(terminalID, function (errorMessage) {
+                            
+                            postRefresh(function (callback) {
+                                if (storage.getItem('exit')) {
+                                    window.location = "index.html";
+                                } else {
+                                    window.location = "index.html";
+                                }
+                            });
+
+                        });
+                    });
+                });
+
+                $(".mBBtn").unbind().click(function () {
+                    changeEntityOfTerminalTicket(terminalID, this.value, function (result) {
+                        closeTerminalTicket(terminalID, function (errorMessage) {
+                            postRefresh(function (callback) {
+                                if (storage.getItem('exit')) {
+                                    window.location = "index.html";
+                                } else {
+                                    window.location = "index.html";
+                                }
+                            });
+                        });
+                    });
+                });
+            });
+        }
+        //TickekTagEkleme işlem
+        function ticketTag(e) {
+            console.log(e);
+            var ticketTag = $(e).text();
+            $("#model3")
+                .append('<div id="myModal3" class="modal fade" role="dialog"><div class="modal-dialog"><!-- Modal content--><div class="modal-content"><div class="modal-header"><h4 style="text-align:center">' + ticketTag + '</h3></div><div class="modal-body"><input type="tel" id="focus" pattern="[0-9]*" inputmode="numeric" class="form-control tag" /></div><div class="modal-footer"><button type="button" class="btn btn-danger clsBtn" data-dismiss="modal">' + storage.getItem("close") + '</button><input type="button" class="btn btn-info sBtn" value="' + storage.getItem("save") + '"/></div></div></div></div>');
+            $("#myModal3").modal('show');
+            $('#myModal3').on('shown.bs.modal', function () {
+                $("#focus").focus();
+            })
+            $(".tag").val(storage.getItem("ttag"));
+            {
+                $(".sBtn").val(storage.getItem("save"));
+                $(".clsBtn").html(storage.getItem("close"))
+            }
+            $(".sBtn").unbind().click(function () {
+                var tag = $(".tag").val();
+                storage.setItem("ttag", tag);
+                if (tag != '') {
+                    updateTerminalTickettag(terminalID, ticketTag, tag, function (result) {
+                        $("#Orders").empty();
+                        setTicket(result);
+                        $("#myModal3").modal('hide');
+                    })
+                } else {
+                    $("#myModal3").modal('hide');
+                }
+
+            });
+            $(".clsBtn").unbind().click(function () { $("#myModal3").modal('hide'); })
+        }
+        //adisyon kapatma işlemi
+        function kapat() {
+            if ($('#Orders').is(':empty')) {
+                postRefresh();
+                window.location = "index.html";
+            } else {
+                storage.removeItem('load');
+
+                var ordercount = storage.getItem("ordercount");
+                var ticketid = storage.getItem("ticketid");
+
+                var lastorderuid = storage.getItem("lastorderuid");
+                console.log("Last Order Uid:" + lastorderuid);
+
+
+
+
+
+                var terminalID = storage.getItem('terminalId');
+
+                var sonrakam;
+                var ilkbakiye;
+                getTicket(ticketid, function (ticket) {
+                    if (!ticket)
+                    {
+                        sonrakam = 0;
+                    }
+                    else
+
+                    {
+                        sonrakam = ticket.totalAmount;
+                    }
+                   
+                    /* 30.09.2026 DUZELTME (kullanici bulgusu: "acik masaya ilave urun
+                       eklenmiyor"): eskiden VERITABANI tutari, ekrandaki (KAYDEDILMEMIS yeni
+                       urunler dahil) "ilk bakiye" ile kiyaslaniyordu - Siparis Ekle'den donunce
+                       her seferinde fark cikiyor, yeni urunler IPTAL edilip adisyon
+                       kaydedilmiyordu. Artik veritabani tutari, masa acildigi andaki
+                       VERITABANI tutariyla kiyaslanir: fark SADECE baska biri (kasa / baska
+                       garson) adisyonu bu arada kaydettiyse cikar. O durumda bile urunler
+                       sessizce silinmez, garsona sorulur. */
+                    var base = null;
+                    try { base = JSON.parse(storage.getItem('egDbBase') || 'null'); } catch (e) { base = null; }
+                    var degisti = !!(ticket && base && base.id === String(ticketid) && base.total !== null && Number(ticket.totalAmount) !== base.total);
+                    storage.removeItem('egDbBase');
+                    if (degisti && confirm('Bu adisyon siz açtıktan sonra başka bir yerde (kasa veya başka garson) değiştirilmiş.\n\nEklediğiniz ürünler yine de kaydedilsin mi?\n\nTamam = Kaydet   ·   İptal = Son eklenen ürünü iptal et')) degisti = false;
+
+                    if (degisti) {
+                        console.log("iptal");
+                        storage.removeItem('ticketid');
+                        storage.removeItem("lastorderuid");
+                        storage.setItem("ilkmi", 0);
+
+                        if (lastorderuid == null)
+                        {
+                            
+                                //clearTerminalTicketOrders(terminalID, function (errorMessage) {
+
+                                //closeTerminalTicket(terminalID, function (errorMessage)
+                                //{
+                                postRefresh(function (callback) {
+                                    if (storage.getItem('exit')) {
+                                        window.location = "index.html";
+                                    } else {
+                                        window.location = "index.html";
+                                    }
+                                });
+                                //});
+                          
+                        }
+                        else
+                        {
+                            cancelOrderOnTerminalTicket(terminalID, lastorderuid, function (errorMessage) {
+                                if (errorMessage)
+                                {
+                                    console.log("HATA");
+                                    console.log(errorMessage.responseText);
+                                }
+                                
+                                //clearTerminalTicketOrders(terminalID, function (errorMessage) {
+
+                                //closeTerminalTicket(terminalID, function (errorMessage)
+                                //{
+                                postRefresh(function (callback) {
+                                    if (storage.getItem('exit')) {
+                                        window.location = "index.html";
+                                    } else {
+                                        window.location = "index.html";
+                                    }
+                                });
+                                //});
+                            });
+
+                        }
+                        
+
+                    }
+
+
+                    else {
+                        console.log("normal");
+                        storage.removeItem('ticketid');
+                        storage.removeItem("lastorderuid");
+                        storage.setItem("ilkmi", 0);
+                        closeTerminalTicket(terminalID, function (errorMessage) {
+                            console.log(errorMessage);
+                            postRefresh(function (callback) {
+                                if (storage.getItem('exit')) {
+                                    window.location = "index.html";
+                                } else {
+                                    window.location = "index.html";
+                                }
+                            });
+                        });
+                    }
+
+                   
+                });
+
+                
+
+
+            }
+        }
+        //Hesapyazdırma işlemi
+        function hesap(a) {
+            var execname = $(a).text();
+            changeEntityOfTerminalTicket(terminalID, masano, function (result) {
+                executeAutomationCommandForTerminalTicket(terminalID, ticketuid, execname, "", function (result) {
+                    if (!result) return;
+                    closeTerminalTicket(terminalID, function (errorMessage) {
+                        postRefresh(function (callback) {
+                            if (storage.getItem('exit')) {
+                                window.location = "index.html";
+                            } else {
+                                window.location = "index.html";
+                            }
+                        });
+                    });
+                });
+            });
+        }
+        var adsnotu;
+        //Adisyon notu
+        function adsnot() {
+            var adsnotu;
+            var ticketid = 0;
+            $("#model").empty();
+            $("#model").append('<div id="myModal" class="modal fade" role="dialog"><div class="modal-dialog"><!-- Modal content--><div class="modal-content"><div class="modal-header"><button type="button" class="close" data-dismiss="modal">&times;</button><h3>' + storage.getItem("ticket_note") + '</h3></div><div class="modal-body"><input type="text" class="form-control text" id="ticketnote" ></div><div class="modal-footer"><input type="button" value="' + storage.getItem("save") + '" class="btn btn-success kBtn" /></div></div></div></div>');
+            $("#myModal").modal('show');
+            $('#myModal').on('shown.bs.modal', function () {
+                $("#ticketnote").focus();
+            })
+           {
+               $(".kBtn").val(storage.getItem("save"));
+            }
+            $(".kBtn").unbind().click(function () {
+                adsnotu = $("#ticketnote").val();
+                if (adsnotu == '') {
+                    $("#myModal").modal('hide');
+                } else {
+                    updateTerminalTicket(terminalID, adsnotu, function (result) {
+                        $("#Orders").empty();
+                        setTicket(result);
+                        $("#myModal").modal('hide');
+                    });
+                }
+            });
+        }
+        //Yeni Adisyon ekleme
+        function adekle() {
+            storage.removeItem('load');
+            changeEntityOfTerminalTicket(terminalID, masano, function (result) {
+                closeTerminalTicket(terminalID, function (errorMessage) {
+                    postRefresh(function (callback) {
+                        window.location = "ticket.html";
+                    });
+                });
+            });
+        }
+        function getTerminalOrderButton(terminalId, orderUids) {
+            //$("#event").empty();
+            //if (storage.getItem('dil') == '1') {
+            //    $("#event").append('<button id="arti" class="btn btn-default fBtn" onclick=arti()>+</button><button id="eksi" class="btn btn-default fBtn" onclick=eksi() disabled>-</button><button class="btn btn-default fBtn" id="sil" onclick=sil()>Cancel</button>');
+            //} else {
+            //    $("#event").append('<button id="arti" class="btn btn-default fBtn" onclick=arti()>+</button><button id="eksi" class="btn btn-default fBtn" onclick=eksi() disabled>-</button><button class="btn btn-default fBtn" id="sil" onclick=sil()>İptal</button>');
+            //}
+            var durumlar = [{ "val": storage.getItem("void") }, { "val": storage.getItem("cancel_void") }, { "val": storage.getItem("gift") }, { "val": storage.getItem("cancel_void") }, { "val": storage.getItem("void") }, { "val": storage.getItem("cancel_void") }, { "val": storage.getItem("gift") }, { "val": storage.getItem("cancel_gift") }];
+            var data = JSON.stringify(orderUids);
+            getAutomationCommandButtonsForTerminalTicket(terminalId, data, function (result) {
+                console.log(result);
+                /* Admin'in Config.html'de secip kaydettigi "Kullanilabilir Otomasyon
+                   Komutlari" listesi (hicbiri secilmemisse hepsi gosterilir) VE
+                   garsonun odeme yetkisi (28.09.2026, kullanici karari: "garsona
+                   göre ödeme alma yetkisi verelim") - burasi sadece GORUNUM
+                   filtresi, GERCEK engelleme sunucu tarafinda (server.js
+                   proxySambaposLan) zaten yapiliyor, bu sadece kullaniciya
+                   calismayacak bir butonu hic gostermeme kolayligi. */
+                var allowedList = [];
+                try { allowedList = JSON.parse(storage.getItem('automationCommandsAllowed') || '[]'); } catch (e) { allowedList = []; }
+                var paymentPattern = /(ödeme|odeme|kredi ?kart|nakit|payment|hesap ?(yaz|kapat))/i;
+                if (allowedList.length) {
+                    result.data = result.data.filter(function (item) { return allowedList.indexOf(item.name) !== -1; });
+                }
+                if (storage.getItem('canTakePayment') === '0') {
+                    result.data = result.data.filter(function (item) { return !paymentPattern.test(item.name); });
+                }
+                $.each(result.data, function (key, item) {
+                    var enter = item.caption;
+                    var str = item.caption;
+                    str = str.replace(/(?:\\[rn]|[\r\n]+)+/g, " ");
+                    var newstr = enter.split(/\r?\n/);
+                    var regex = /(<([^>]+)>)/ig;
+                    //var son = newstr.replace(regex, "");
+                    var son;
+                    var durum = false;
+                    console.log(str);
+                    $.each(durumlar, function (key, item) {
+                        if (str == item.val) {
+                            durum = true;
+                        }
+                    });
+                    if (durum) {
+                        if (item.canExecute) {
+                            $("#event").append('<input class="btn btn-default fBtn iBtn" data-values="' + item.values + '" data-execname="' + item.name + '" type="button" value="' + str + ' "/>');
+                        } else {
+                            $("#event").append('<input class="btn btn-default fBtn iBtn" data-values="' + item.values + '" data-execname="' + item.name + '" type="button" value="' + str + '" disabled/>');
+                        }
+                    }
+                })
+            })
+        }
+    </script>
+    <style>
+        /* 29.09.2026, kullanici istegi: "arayuzleri guncelle biraz modern
+           yap" - siparis satirlari duz beyazdi. ":not(.selected)" ile
+           JS'in satir tiklaninca uyguladigi MAVI secili rengine (bkz.
+           $('#'+x+'.oBtn').css("background-color","#3498db")) DOKUNULMUYOR. */
+        .oBtn:not(.selected) {
+            border-radius: 8px !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,.12);
+            background: linear-gradient(135deg, #eaf3fb, #dcebf7) !important;
+            border: 1px solid #bcd6ec !important;
+            margin-bottom: 5px !important;
+        }
+        /* 29.09.2026, kullanici bulgusu: "siparis numarasi falan net
+           gorunmuyor" - ekran goruntusunde ilk satir (Sip.No/saat) sabit
+           basligin (.eg-header) HEMEN ALTINDA/ARKASINDA kaliyordu, cunku
+           #Orders'in breakpoint'e gore % veya vh olarak ayarlanmis "top"
+           degeri bazi ekran boyutlarinda baslik yuksekligini tam
+           karsilamiyordu. Her breakpoint'i tek tek duzeltmek yerine,
+           listenin ICINE guvenli bir ust bosluk eklendi - konum/boyut
+           hesaplarina DOKUNULMADAN. */
+        /* 29.09.2026 ikinci duzeltme: "en ust kisim tam gorunmuyor" -
+           .eg-header'a eklenen 2px turuncu alt cizgi, sinirda kalan
+           breakpoint'lerde ust bosluk payini yeniden yetersiz birakti.
+           Hem #Orders hem SOL Islemler paneli (.eventler) icin pay
+           büyütüldü. */
+        .eventler {
+            padding-top: 22px !important;
+            box-sizing: border-box !important;
+        }
+        #Orders {
+            padding-top: 22px !important;
+            box-sizing: border-box !important;
+        }
+        /*Telefon*/
+        @media only screen and (max-width: 480px) {
+            .mBtn {
+                margin: 1px;
+                white-space: normal;
+                font-family: Calibri;
+            }
+
+            .mBBtn {
+                margin: 1px;
+                white-space: normal;
+                font-family: Calibri;
+                font-size: 10px;
+            }
+
+            body {
+                background-color: #f5f5f5;
+            }
+
+            ul {
+                list-style-type: none;
+            }
+
+            .iade {
+                text-decoration: line-through;
+                color: #a2a2a2;
+                background-color: #e6e6e6;
+            }
+
+            .gndr {
+                font-size: 8px;
+            }
+
+            .ikram {
+                color: #3a06b4;
+            }
+
+            .durum {
+                font-size: 8px;
+            }
+
+            #Orders {
+                margin-left: 30%;
+                top: 10%;
+                width: 70%;
+                height: 70%;
+                overflow-y: auto;
+                position: fixed;
+                font-family: Calibri;
+            }
+
+            .tags {
+                color: #3399ff;
+                background-color: white;
+                font-size: 10px;
+            }
+
+            input[type="button"]:disabled {
+                background-color: #ddd;
+            }
+
+            button:disabled {
+                background-color: #ddd;
+            }
+
+            .eventler {
+                top: 10%;
+                height: 80%;
+                position: fixed;
+                width: 29%;
+                overflow-y: auto;
+            }
+
+            .area {
+                width: 100%;
+            }
+
+            .fBtn:active {
+                background-color: #3399ff !important;
+            }
+
+            .fBtn:hover {
+                background-color: #3399ff !important;
+            }
+
+            .fBtn {
+                width: 100%;
+                height: 50px;
+                background-color: white;
+                color: black;
+                margin-top: 1px;
+                white-space: normal;
+                border-color: #e0e0e0;
+            }
+
+            .fKpt {
+                width: 100%;
+                font-size: 20px;
+                height: 10%;
+                bottom: 0px;
+            }
+
+            .order li {
+                background-color: #ffffff;
+            }
+
+                .order li.selected {
+                    background-color: #3498db !important;
+                    color: white;
+                }
+
+            .onr {
+                width: 33%;
+                white-space: normal;
+                word-wrap: break-word;
+            }
+
+            .spn {
+                float: right;
+            }
+
+            .oBtn {
+                font-family: Calibri;
+            }
+
+            .total {
+                top: 85%;
+            }
+        }
+
+        @media only screen and (min-width: 480px) and (max-width:760px) {
+            .mBtn {
+                margin: 1px;
+                white-space: normal;
+                font-family: Calibri;
+            }
+
+            .mBBtn {
+                margin: 1px;
+                white-space: normal;
+                font-family: Calibri;
+                font-size: 11px;
+            }
+
+            body {
+                background-color: #f5f5f5;
+            }
+
+            ul {
+                list-style-type: none;
+            }
+
+            .iade {
+                text-decoration: line-through;
+                color: #a2a2a2;
+                background-color: #e6e6e6;
+            }
+
+            .gndr {
+                font-size: 10px;
+            }
+
+            .ikram {
+                color: #3a06b4;
+            }
+
+            .durum {
+                font-size: 10px;
+            }
+
+            #Orders {
+                margin-left: 30%;
+                top: 16%;
+                width: 70%;
+                height: 61%;
+                overflow-y: auto;
+                position: fixed;
+                font-family: Calibri;
+            }
+
+            .tags {
+                color: #3399ff;
+                background-color: white;
+                font-size: 10px;
+            }
+
+            input[type="button"]:disabled {
+                background-color: #ddd;
+            }
+
+            button:disabled {
+                background-color: #ddd;
+            }
+
+            .eventler {
+                top: 16%;
+                height: 66%;
+                position: fixed;
+                width: 29%;
+                overflow-y: auto;
+            }
+
+            .area {
+                width: 100%;
+            }
+
+            .fBtn:active {
+                background-color: #3399ff !important;
+            }
+
+            .fBtn:hover {
+                background-color: #3399ff !important;
+            }
+
+            .fBtn {
+                width: 100%;
+                height: 50px;
+                background-color: white;
+                color: black;
+                margin-top: 1px;
+                white-space: normal;
+                border-color: #e0e0e0;
+            }
+
+            .fKpt {
+                width: 100%;
+                font-size: 20px;
+                height: 15%;
+                bottom: 0px;
+            }
+
+            .total {
+                top: 77%;
+            }
+
+            .order li {
+                background-color: #ffffff;
+            }
+
+                .order li.selected {
+                    background-color: #3498db !important;
+                    color: white;
+                }
+
+            .onr {
+                width: 33%;
+                white-space: normal;
+                word-wrap: break-word;
+            }
+
+            .spn {
+                float: right;
+            }
+
+            .oBtn {
+                font-family: Calibri;
+            }
+        }
+
+        @media only screen and (min-width: 480px) and (max-width:760px) and (min-height:800px) {
+            .mBtn {
+                margin: 1px;
+                white-space: normal;
+                font-family: Calibri;
+            }
+
+            .mBBtn {
+                margin: 1px;
+                white-space: normal;
+                font-family: Calibri;
+                font-size: 11px;
+            }
+
+            body {
+                background-color: #f5f5f5;
+            }
+
+            ul {
+                list-style-type: none;
+            }
+
+            .iade {
+                text-decoration: line-through;
+                color: #a2a2a2;
+                background-color: #e6e6e6;
+            }
+
+            .gndr {
+                font-size: 12px;
+            }
+
+            .ikram {
+                color: #3a06b4;
+            }
+
+            .durum {
+                font-size: 12px;
+            }
+
+            #Orders {
+                margin-left: 30%;
+                top: 8%;
+                width: 70%;
+                height: 75%;
+                overflow-y: auto;
+                position: fixed;
+                font-family: Calibri;
+            }
+
+            .tags {
+                color: #3399ff;
+                background-color: white;
+                font-size: 12px;
+            }
+
+            input[type="button"]:disabled {
+                background-color: #ddd;
+            }
+
+            button:disabled {
+                background-color: #ddd;
+            }
+
+            .eventler {
+                top: 8%;
+                height: 75%;
+                position: fixed;
+                width: 29%;
+                overflow-y: auto;
+            }
+
+            .area {
+                width: 100%;
+            }
+
+            .fBtn:active {
+                background-color: #3399ff !important;
+            }
+
+            .fBtn:hover {
+                background-color: #3399ff !important;
+            }
+
+            .fBtn {
+                width: 100%;
+                height: 70px;
+                background-color: white;
+                color: black;
+                margin-top: 1px;
+                white-space: normal;
+                border-color: #e0e0e0;
+            }
+
+            .fKpt {
+                width: 100%;
+                font-size: 18px;
+                height: 70px;
+                bottom: 0px;
+            }
+
+            .total {
+                top: 84%;
+            }
+
+            .order li {
+                background-color: #ffffff;
+            }
+
+                .order li.selected {
+                    background-color: #3498db !important;
+                    color: white;
+                }
+
+            .onr {
+                width: 33%;
+                white-space: normal;
+                word-wrap: break-word;
+            }
+
+            .spn {
+                float: right;
+            }
+
+            .oBtn {
+                font-family: Calibri;
+                font-size: 14px;
+            }
+        }
+
+        @media only screen and (min-width: 768px) and (max-height:800px) {
+            .mBtn {
+                margin: 1px;
+                white-space: normal;
+                font-family: Calibri;
+            }
+
+            .mBBtn {
+                margin: 1px;
+                white-space: normal;
+                font-family: Calibri;
+                font-size: 11px;
+            }
+
+            body {
+                background-color: #f5f5f5;
+            }
+
+            ul {
+                list-style-type: none;
+            }
+
+            .iade {
+                text-decoration: line-through;
+                color: #a2a2a2;
+                background-color: #e6e6e6;
+            }
+
+            .gndr {
+                font-size: 10px;
+            }
+
+            .ikram {
+                color: #3a06b4;
+            }
+
+            .durum {
+                font-size: 10px;
+            }
+
+            #Orders {
+                margin-left: 30%;
+                top: 9vh;
+                width: 70%;
+                height: 70%;
+                overflow-y: auto;
+                position: fixed;
+                font-family: Calibri;
+            }
+
+            .tags {
+                color: #3399ff;
+                background-color: white;
+                font-size: 10px;
+            }
+
+            input[type="button"]:disabled {
+                background-color: #ddd;
+            }
+
+            button:disabled {
+                background-color: #ddd;
+            }
+
+            .eventler {
+                top: 9vh;
+                height: 80%;
+                position: fixed;
+                width: 29%;
+                overflow-y: auto;
+            }
+
+            .area {
+                width: 100%;
+            }
+
+            .fBtn:active {
+                background-color: #3399ff !important;
+            }
+
+            .fBtn:hover {
+                background-color: #3399ff !important;
+            }
+
+            .fBtn {
+                width: 100%;
+                background-color: white;
+                color: black;
+                margin-top: 1px;
+                white-space: normal;
+                border-color: #e0e0e0;
+                bottom: 0px;
+                height: 90px !important;
+                font-size: 20px !important;
+            }
+
+            .fKpt {
+                width: 100%;
+                bottom: 0px;
+                height: 70px !important;
+                font-size: 25px !important;
+            }
+
+            .total {
+                top: 85%;
+                font-size: 30px !important;
+            }
+
+            .order li {
+                background-color: #ffffff;
+            }
+
+                .order li.selected {
+                    background-color: #3498db !important;
+                    color: white;
+                }
+
+            .onr {
+                width: 33%;
+                white-space: normal;
+                word-wrap: break-word;
+                font-size: 25px !important;
+            }
+
+            .spn {
+                float: right;
+            }
+
+            .oBtn {
+                font-family: Calibri;
+                font-size: 25px !important;
+            }
+
+            .msNo {
+                font-size: 20px !important;
+            }
+
+            .mdlBtn {
+                height: 4vh;
+                font-size: 20px !important;
+            }
+
+            .tagBtn {
+                height: 4vh;
+                font-size: 20px !important;
+            }
+
+            .mdlName {
+                font-size: 25px !important;
+            }
+
+            .cls, .cBtn {
+                height: 6vh;
+                font-size: 20px !important;
+            }
+        }
+
+        @media only screen and (min-width: 768px) and (min-height:800px) {
+            .mBtn {
+                margin: 1px;
+                white-space: normal;
+                font-family: Calibri;
+            }
+
+            .mBBtn {
+                margin: 1px;
+                white-space: normal;
+                font-family: Calibri;
+                font-size: 11px;
+            }
+
+            body {
+                background-color: #f5f5f5;
+            }
+
+            ul {
+                list-style-type: none;
+            }
+
+            .iade {
+                text-decoration: line-through;
+                color: #a2a2a2;
+                background-color: #e6e6e6;
+            }
+
+            .gndr {
+                font-size: 10px;
+            }
+
+            .ikram {
+                color: #3a06b4;
+            }
+
+            .durum {
+                font-size: 10px;
+            }
+
+            #Orders {
+                margin-left: 30%;
+                top: 6vh;
+                width: 70%;
+                height: 70%;
+                overflow-y: auto;
+                position: fixed;
+                font-family: Calibri;
+            }
+
+            .tags {
+                color: #3399ff;
+                background-color: white;
+                font-size: 10px;
+            }
+
+            input[type="button"]:disabled {
+                background-color: #ddd;
+            }
+
+            button:disabled {
+                background-color: #ddd;
+            }
+
+            .eventler {
+                top: 6vh;
+                height: 80%;
+                position: fixed;
+                width: 29%;
+                overflow-y: auto;
+            }
+
+            .area {
+                width: 100%;
+            }
+
+            .fBtn:active {
+                background-color: #3399ff !important;
+            }
+
+            .fBtn:hover {
+                background-color: #3399ff !important;
+            }
+
+            .fBtn {
+                width: 100%;
+                background-color: white;
+                color: black;
+                margin-top: 1px;
+                white-space: normal;
+                border-color: #e0e0e0;
+                bottom: 0px;
+                height: 90px !important;
+                font-size: 20px !important;
+            }
+
+            .fKpt {
+                width: 100%;
+                bottom: 0px;
+                height: 70px !important;
+                font-size: 25px !important;
+            }
+
+            .total {
+                top: 85%;
+                font-size: 30px !important;
+            }
+
+            .order li {
+                background-color: #ffffff;
+            }
+
+                .order li.selected {
+                    background-color: #3498db !important;
+                    color: white;
+                }
+
+            .onr {
+                width: 33%;
+                white-space: normal;
+                word-wrap: break-word;
+                font-size: 25px !important;
+            }
+
+            .spn {
+                float: right;
+            }
+
+            .oBtn {
+                font-family: Calibri;
+                font-size: 25px !important;
+            }
+
+            .msNo {
+                font-size: 20px !important;
+            }
+
+            .mdlBtn {
+                height: 4vh;
+                font-size: 20px !important;
+            }
+
+            .tagBtn {
+                height: 4vh;
+                font-size: 20px !important;
+            }
+
+            .mdlName {
+                font-size: 25px !important;
+            }
+
+            .cls, .cBtn {
+                height: 6vh;
+                font-size: 20px !important;
+            }
+        }
+
+        .head {
+            height: 9%;
+        }
+
+        .hed {
+            height: auto !important;
+            min-height: 26px;
+            background: #e7edf5 !important;
+            color: #24324a !important;
+            font-weight: 700 !important;
+            font-size: 12.5px !important;
+            padding: 5px 10px !important;
+            border-radius: 6px;
+            margin-bottom: 4px !important;
+        }
+        .hed .spn {
+            color: #55627a !important;
+            font-weight: 600 !important;
+        }
+
+        .navbar-header {
+            height: 50px;
+        }
+
+        .logo {
+            height: 30px !important;
+            width: auto !important;
+        }
+
+        .lg {
+            position: fixed !important;
+            top: 8px !important;
+            margin-left: 8px !important;
+        }
+
+        .user {
+            position: fixed;
+            top: 14px;
+            float: right;
+            right: 10px;
+            font-size: 15px;
+            font-family: Calibri;
+            margin: 1px 1px 1px 1px;
+        }
+    </style>
+</head>
+<body class="eg-ticket">
+    <!-- EnsariPOS Garson v2: garsonsys tarzi adisyon ekrani (ustte masa/adisyon no, ortada
+         numarali siparis kartlari, altta islem izgarasi + ODEME AL / KAPAT + Toplam/Kalan) -->
+    <div class="eg-tk-head" id="egTkHead">
+        <div id="masanumara" style="display:flex;align-items:center;gap:8px;min-width:0;"></div>
+        <span class="eg-tk-head__user user"></span>
+        <button type="button" class="eg-tb-btn" id="egSearchBtn" title="Siparişlerde ara">🔍</button>
+    </div>
+    <ul class="list-group order" id="Orders"></ul>
+    <div class="eg-sheet" id="egSheet">
+        <div class="eg-sheet__handle"></div>
+        <div id="adsnot" class="eg-tk-note"></div>
+        <div id="ticketTag" class="eg-tk-note"></div>
+        <div id="event" class="eventler"></div>
+        <div class="eg-bigbtns">
+            <button type="button" class="eg-btn eg-btn--green" id="egPayBtn" style="display:none;">💳 ÖDEME AL</button>
+            <button type="button" class="eg-btn eg-btn--dark" id="egKapatBtn" onclick="kapat()">✖ KAPAT</button>
+        </div>
+        <div class="eg-totals">
+            <div class="eg-totals__left"><small>Toplam</small><b id="egTotal">0.00</b></div>
+            <div class="eg-totals__remain"><small>Kalan</small><b id="egRemain">0.00 ₺</b></div>
+        </div>
+        <div id="value" style="display:none;"></div>
+    </div>
+    <div id="model"></div><div id="model2"></div><div id="model3"></div><div id="model4"></div>
+
+    <script>
+        /* Odeme yetkisi olmayan garsona (sunucu /api/me -> paymentCommands) odeme komutlari hic
+           gosterilmez; GERCEK engel sunucuda (EnsariGarsonSrv), bu sadece gorunum. */
+        var egPaymentCommands = [];
+        try { egPaymentCommands = JSON.parse(storage.getItem('paymentCommands') || '[]'); } catch (e) { egPaymentCommands = []; }
+        var egCanPay = storage.getItem('canTakePayment') !== '0';
+        function egFold(s) {
+            return String(s || '').toLocaleLowerCase('tr').replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c').replace(/\s+/g, ' ').trim();
+        }
+        function egIsPaymentCmd(name) {
+            var f = egFold(name);
+            return egPaymentCommands.some(function (p) { return egFold(p) === f; });
+        }
+        // SambaPOS buton basligi "[='{TICKET TAG:Adres}'...]" gibi SABLON icerebilir (SambaPOS kendi ekraninda
+        // hesaplar, GraphQL ham halini dondurur) - boyle ise komutun kendi adi gosterilir.
+        function egCaption(it) {
+            var cap = String(it.caption || '').replace(/(?:\\[rn]|[\r\n]+)+/g, ' ').replace(/<[^>]+>/g, '').trim();
+            if (!cap || /\[=|\{[^}]*\}|\[[^\]]*:/.test(cap)) cap = it.name || cap;
+            return cap;
+        }
+        // "Hesap Yaz, Nakit" gibi bosluklu yazimlar SambaPOS adiyla eslessin + yetkisiz garsondan odeme komutlari cikar
+        hesaps = hesaps.map(function (h) { return h.trim(); }).filter(function (h) { return h && (egCanPay || !egIsPaymentCmd(h)); });
+
+        function egAppendExtraCommands() {
+            var excludeNames = (typeof hesaps !== 'undefined' ? hesaps : []).slice();
+            getAutomationCommandButtonsForTerminalTicket(terminalID, "[]", function (result) {
+                var allowedList = [];
+                try { allowedList = JSON.parse(storage.getItem('automationCommandsAllowed') || '[]'); } catch (e) { allowedList = []; }
+                var items = (result && result.data) ? result.data.slice() : [];
+                if (allowedList.length) items = items.filter(function (it) { return allowedList.indexOf(it.name) !== -1; });
+                if (!egCanPay) items = items.filter(function (it) { return !egIsPaymentCmd(it.name); });
+                var durumlarCaptions = [storage.getItem('void'), storage.getItem('cancel_void'), storage.getItem('gift'), storage.getItem('cancel_gift')];
+                // Ekrandaki hazir butonlarla (Adisyon Ekle/Notu, Masa Degistir...) ve birbiriyle AYNI isimli olanlar tekrar gosterilmez
+                // Buyuk KAPAT dugmesi zaten var - SambaPOS'un ayni adli komutu ikinci kez gosterilmez
+                var seen = { 'kapat': 1 };
+                $('#event .fBtn').each(function () { seen[egFold($(this).is('input') ? $(this).val() : $(this).text())] = 1; });
+                excludeNames.forEach(function (n) { seen[egFold(n)] = 1; });
+                items = items.filter(function (it) {
+                    var cap = egCaption(it);
+                    if (durumlarCaptions.indexOf(cap) !== -1) return false;
+                    var key = egFold(cap), key2 = egFold(it.name);
+                    if (seen[key] || seen[key2]) return false;
+                    seen[key] = seen[key2] = 1;
+                    return true;
+                });
+                $('#event .eg-extra-cmd').remove();
+                items.forEach(function (item) {
+                    var btn = $('<button type="button" class="btn btn-default fBtn iBtn eg-extra-cmd"></button>');
+                    btn.attr('data-values', item.values || '').attr('data-execname', item.name).text(egCaption(item));
+                    if (item.canExecute === false) btn.prop('disabled', true);
+                    $('#event').append(btn);
+                });
+                egStyleActionButtons();
+                egLayoutTicket();
+            });
+        }
+        function egFilterOrders(text) {
+            var t = (text || '').toLocaleLowerCase('tr');
+            $('#Orders > li.oBtn').each(function () {
+                var name = $(this).text().toLocaleLowerCase('tr');
+                $(this).toggle(!t || name.indexOf(t) !== -1);
+            });
+        }
+        var egOrdersSearchOpen = false;
+
+        // Baslik: "B16  #214"
+        function masanumarası() {
+            var ticketid = storage.getItem('ticketId');
+            var masaadi = storage.getItem("Masa") || '';
+            $("#masanumara").html('<span class="eg-tk-head__table">' + egEsc(masaadi) + '</span>' +
+                (ticketid ? '<span class="eg-tk-head__id">#' + egEsc(ticketid) + '</span>' : '<span class="eg-tk-head__id">Yeni</span>'));
+        }
+
+        // Toplam / Kalan kutusu - setTicket her cagrildiginda guncellenir
+        var egLastTicket = null;
+        function egUpdateTotals(ticket) {
+            if (!ticket) return;
+            egLastTicket = ticket;
+            var total = Number(ticket.totalAmount) || 0;
+            var remain = (ticket.remainingAmount != null) ? Number(ticket.remainingAmount) : total;
+            $('#egTotal').text(total.toFixed(2));
+            $('#egRemain').text(remain.toFixed(2) + ' ₺');
+            $('#egPayBtn').toggle(egCanPay && remain > 0.001);
+        }
+        var egOrigSetTicket = setTicket;
+        setTicket = function (ticket, sec) {
+            egOrigSetTicket(ticket, sec);
+            egUpdateTotals(ticket);
+            egLayoutTicket();
+        };
+
+        // Siparis listesi, ustteki baslik ile alttaki panel arasinda kalsin (panel yuksekligi degisken)
+        function egLayoutTicket() {
+            var head = document.getElementById('egTkHead'), sheet = document.getElementById('egSheet');
+            if (!head || !sheet) return;
+            document.body.style.setProperty('--eg-tk-top', head.offsetHeight + 'px');
+            document.body.style.setProperty('--eg-tk-bottom', (sheet.offsetHeight + 6) + 'px');
+        }
+
+        // ---------------------------------------------------------- ODEME AL (garsonsys payment.html'in sade hali)
+        var egPayTypes = null;
+        function egToast(msg) {
+            $('.eg-toast').remove();
+            var t = $('<div class="eg-toast"></div>').text(msg).appendTo('body');
+            setTimeout(function () { t.fadeOut(300, function () { t.remove(); }); }, 2600);
+        }
+        function egOpenPayment() {
+            if (!egLastTicket) return;
+            var total = Number(egLastTicket.totalAmount) || 0;
+            var remain = (egLastTicket.remainingAmount != null) ? Number(egLastTicket.remainingAmount) : total;
+            var amount = remain.toFixed(2);
+            $('#egPayModal').remove();
+            var m = $(
+                '<div class="eg-modal-backdrop" id="egPayModal"><div class="eg-modal">' +
+                '<div class="eg-modal__head"><div class="eg-modal__title">💳 Ödeme Al — ' + egEsc(storage.getItem('Masa') || '') + '</div><button type="button" class="eg-modal__close" data-close>✕</button></div>' +
+                '<div class="eg-pay-summary"><div><small>Toplam</small><b>' + total.toFixed(2) + '</b></div><div class="eg-pay-remaining"><small>Kalan</small><b>' + remain.toFixed(2) + ' ₺</b></div></div>' +
+                '<input class="eg-amount" id="egPayAmount" inputmode="decimal" value="' + amount + '" />' +
+                '<div class="eg-pay-quick"><button type="button" data-q="all">Tamamı</button><button type="button" data-q="2">1/2</button><button type="button" data-q="3">1/3</button><button type="button" data-q="clr">Sil</button></div>' +
+                '<div class="eg-pad" id="egPayPad"></div>' +
+                '<div class="eg-pay-types" id="egPayTypes"><div class="eg-empty" style="grid-column:1/-1;padding:10px;">Ödeme tipleri yükleniyor…</div></div>' +
+                '<div class="eg-pay-calcs" id="egPayCalcs"></div>' +
+                '<div class="eg-help" style="font-size:11.5px;color:var(--eg-muted);margin-top:8px;">Müşteri fazla verdiyse verilen tutarı yazın; kalan borç tahsil edilir, para üstü gösterilir.</div>' +
+                '</div></div>').appendTo('body');
+            var fresh = true;
+            ['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', '⌫'].forEach(function (k) {
+                $('<button type="button"></button>').text(k).on('click', function () {
+                    egHaptic(8);
+                    var $a = $('#egPayAmount'), v = fresh ? '' : $a.val();
+                    fresh = false;
+                    if (k === '⌫') v = v.slice(0, -1);
+                    else if (k === ',') { if (v.indexOf('.') === -1) v = (v || '0') + '.'; }
+                    else v += k;
+                    $a.val(v);
+                }).appendTo('#egPayPad');
+            });
+            m.on('click', '[data-close]', function () { m.remove(); });
+            m.on('click', function (e) { if (e.target === m[0]) m.remove(); });
+            m.on('click', '[data-q]', function () {
+                var q = $(this).data('q');
+                fresh = false;
+                if (q === 'all') $('#egPayAmount').val(remain.toFixed(2));
+                else if (q === 'clr') { $('#egPayAmount').val(''); }
+                else $('#egPayAmount').val((remain / Number(q)).toFixed(2));
+            });
+            function renderTypes(types) {
+                var box = $('#egPayTypes').empty();
+                if (!types || !types.length) { box.html('<div class="eg-empty" style="grid-column:1/-1;padding:10px;">SambaPOS\'ta bu rol için ödeme tipi tanımlı değil.</div>'); return; }
+                var fast = [storage.getItem('fastPayment1'), storage.getItem('fastPayment2')].filter(Boolean);
+                types.sort(function (a, b) {
+                    var fa = fast.indexOf(a.name), fb = fast.indexOf(b.name);
+                    return (fa === -1 ? 99 : fa) - (fb === -1 ? 99 : fb);
+                });
+                types.forEach(function (t) {
+                    var isFast = fast.indexOf(t.name) !== -1;
+                    $('<button type="button" class="eg-btn ' + (isFast ? 'eg-btn--green' : 'eg-btn--ghost') + '"></button>')
+                        .text((isFast ? '⚡ ' : '') + t.name)
+                        .on('click', function () { egDoPay(t.name); })
+                        .appendTo(box);
+                });
+            }
+            if (egPayTypes) renderTypes(egPayTypes);
+            else getPaymentTypesForRole(storage.getItem('userRoleId') || 0, function (types) { egPayTypes = types || []; renderTypes(egPayTypes); });
+            // SambaPOS'taki hesaplamalar (% Iskonto, Yuvarla...) - rol eslestirmesine gore, isimler SambaPOS'tan
+            function renderCalcs(sel) {
+                var box = $('#egPayCalcs').empty();
+                (sel || []).forEach(function (s) {
+                    (s.calculationTypes ? [].concat(s.calculationTypes) : []).forEach(function (ct) {
+                        var label = (s.buttonHeader || ct.name || s.name).replace(/<[^>]+>/g, '').trim();
+                        $('<button type="button" class="eg-btn eg-btn--ghost"></button>').text(label)
+                            .on('click', function () { egAskCalc(ct, label); })
+                            .appendTo(box);
+                    });
+                });
+            }
+            if (egCalcSelectors) renderCalcs(egCalcSelectors);
+            else getCalculationSelectorsForRole(storage.getItem('userRoleId') || 0, function (sel) { egCalcSelectors = sel || []; renderCalcs(egCalcSelectors); });
+        }
+        var egCalcSelectors = null;
+        function egAskCalc(ct, label) {
+            var isRate = Number(ct.calculationMethod) === 0;
+            $('#egCalcModal').remove();
+            var m = $('<div class="eg-modal-backdrop" id="egCalcModal" style="z-index:3100;"><div class="eg-modal">' +
+                '<div class="eg-modal__head"><div class="eg-modal__title">' + egEsc(label) + '</div><button type="button" class="eg-modal__close" data-close>✕</button></div>' +
+                '<div class="eg-help" style="font-size:12.5px;color:var(--eg-muted);margin-bottom:8px;">' + (isRate ? 'Yüzde değeri girin (ör. 10 = %10)' : 'Tutar girin (TL)') + '</div>' +
+                '<input class="eg-amount" id="egCalcValue" inputmode="decimal" placeholder="0" />' +
+                '<div style="display:flex;gap:10px;"><button type="button" class="eg-btn eg-btn--ghost" style="flex:1;" data-close>Vazgeç</button>' +
+                '<button type="button" class="eg-btn eg-btn--green" style="flex:1.4;" id="egCalcApply">Uygula</button></div>' +
+                '</div></div>').appendTo('body');
+            setTimeout(function () { $('#egCalcValue').focus(); }, 50);
+            m.on('click', '[data-close]', function () { m.remove(); });
+            $('#egCalcApply').on('click', function () {
+                var v = parseFloat(String($('#egCalcValue').val() || '').replace(',', '.'));
+                if (!(v > 0)) { egToast('Değer girin.'); return; }
+                if (isRate && v > 100) { egToast('Yüzde 100\'den büyük olamaz.'); return; }
+                $('#egCalcApply').prop('disabled', true);
+                addCalculationToTerminalTicket(terminalID, ct.name, v, function (t) {
+                    m.remove();
+                    if (!t) return;
+                    storage.setItem('ilkbakiye', t.totalAmount);
+                    $('#Orders').empty();
+                    setTicket(t);
+                    egToast(label + ' uygulandı. Kalan: ' + Number(t.remainingAmount != null ? t.remainingAmount : t.totalAmount).toFixed(2));
+                    egOpenPayment();
+                });
+            });
+        }
+        function egShowChange(change, done) {
+            $('#egChangeModal').remove();
+            var m = $('<div class="eg-modal-backdrop" id="egChangeModal" style="z-index:3100;"><div class="eg-modal" style="text-align:center;">' +
+                '<div style="font-size:40px;">💵</div><div style="font-weight:800;font-size:15px;color:var(--eg-muted);text-transform:uppercase;">Para Üstü</div>' +
+                '<div style="font-weight:800;font-size:40px;color:var(--eg-green);margin:6px 0 14px;">' + change.toFixed(2) + ' ₺</div>' +
+                '<button type="button" class="eg-btn eg-btn--green eg-btn--block" id="egChangeOk">Tamam</button></div></div>').appendTo('body');
+            $('#egChangeOk').on('click', function () { m.remove(); done(); });
+        }
+        function egDoPay(typeName) {
+            var raw = String($('#egPayAmount').val() || '').replace(',', '.');
+            var amount = parseFloat(raw);
+            var remain = egLastTicket ? Number(egLastTicket.remainingAmount != null ? egLastTicket.remainingAmount : egLastTicket.totalAmount) : 0;
+            if (!(amount > 0)) { egToast('Tutar girin.'); return; }
+            // Fazla verildiyse (garsonsys'teki gibi): kalan borc tahsil edilir, para ustu gosterilir
+            var toCharge = Math.min(amount, remain);
+            var change = Math.max(0, Math.round((amount - remain) * 100) / 100);
+            if (!(toCharge > 0)) { egToast('Ödenecek borç yok.'); return; }
+            $('#egPayTypes .eg-btn').prop('disabled', true);
+            payTerminalTicket(terminalID, typeName, toCharge, function (r) {
+                if (!r || r.errorMessage) {
+                    $('#egPayTypes .eg-btn').prop('disabled', false);
+                    alert((r && r.errorMessage) || 'Ödeme alınamadı.');
+                    return;
+                }
+                $('#egPayModal').remove();
+                if (Number(r.remainingAmount) <= 0.001) {
+                    // Tamami odendi: adisyon kapatilir, masalara donulur
+                    var finish = function () {
+                        storage.removeItem('ticketid');
+                        storage.removeItem('lastorderuid');
+                        storage.setItem('ilkmi', 0);
+                        closeTerminalTicket(terminalID, function () {
+                            postRefresh(function () { window.location = 'index.html'; });
+                        });
+                        setTimeout(function () { window.location = 'index.html'; }, 4000);
+                    };
+                    if (change > 0) egShowChange(change, finish); else finish();
+                } else {
+                    amount = toCharge;
+                    egToast(amount.toFixed(2) + ' ' + typeName + ' alındı. Kalan: ' + Number(r.remainingAmount).toFixed(2));
+                    getTerminalTicket(terminalID, function (t) {
+                        if (!t) return;
+                        storage.setItem('ilkbakiye', t.totalAmount);
+                        $('#Orders').empty();
+                        setTicket(t);
+                    });
+                }
+            });
+        }
+
+        $(function () {
+            $('#egSearchBtn').on('click', function () {
+                egOrdersSearchOpen = !egOrdersSearchOpen;
+                egToggleSearch(egOrdersSearchOpen, egFilterOrders);
+            });
+            $('#egPayBtn').on('click', function () { egHaptic(12); egOpenPayment(); });
+            egLayoutTicket();
+            $(window).on('resize orientationchange', egLayoutTicket);
+            if (window.MutationObserver) {
+                new MutationObserver(egLayoutTicket).observe(document.getElementById('egSheet'), { childList: true, subtree: true, characterData: true });
+            }
+        });
+    </script>
+</body>
+</html>

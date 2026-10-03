@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <title>Telefon Bağla - EnsariPOS Local Garson</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="images/app-icon-192.png">
+    <script src="scripts/qrcode.min.js"></script>
+    <style>
+        /* "Telefon Bagla" (29.09.2026): restoran bilgisayarinda acilir, garson telefonuyla QR'i
+           okutur - IP adresi yazmakla ugrasmaz. Giris gerektirmez (sadece yerel ag adresi gosterir). */
+        body { margin: 0; background: #eef1f6; color: #1f2937; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+        .wrap { max-width: 980px; margin: 0 auto; padding: 28px 18px; text-align: center; }
+        h1 { margin: 0 0 6px; font-size: 28px; }
+        .sub { color: #6b7280; margin: 0 0 24px; font-size: 16px; }
+        .row { display: flex; flex-wrap: wrap; justify-content: center; }
+        .box { background: #fff; border-radius: 20px; padding: 22px; margin: 10px; box-shadow: 0 4px 18px rgba(20,32,73,.1); width: 320px; }
+        .box h2 { margin: 0 0 4px; font-size: 20px; }
+        .box p { margin: 0 0 14px; color: #6b7280; font-size: 14px; }
+        .qr { display: inline-block; padding: 10px; background: #fff; border: 1px solid #e3e7ee; border-radius: 12px; }
+        .url { margin-top: 12px; font-family: Consolas, monospace; font-size: 17px; font-weight: 700; color: #1b2440; word-break: break-all; }
+        .steps { text-align: left; max-width: 620px; margin: 22px auto 0; background: #fff; border-radius: 16px; padding: 16px 22px; font-size: 15px; line-height: 1.7; }
+        .warn { color: #e5484d; font-weight: 700; margin-top: 16px; }
+        .foot { color: #6b7280; font-size: 13px; margin-top: 18px; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>📱 Telefonu Garson Sistemine Bağla</h1>
+    <p class="sub">Telefon restoranın Wi-Fi'ına bağlıyken kamerayla aşağıdaki QR kodu okutun.</p>
+    <div class="row" id="boxes"><p class="sub">Adres bulunuyor…</p></div>
+    <div class="warn" id="warn" style="display:none"></div>
+    <div class="steps">
+        <b>Garson telefonu:</b> QR'ı okutun → açılan sayfada kendi SambaPOS PIN'inizle girin → Chrome'da <b>⋮ → Ana ekrana ekle</b> (iPhone: <b>Paylaş → Ana Ekrana Ekle</b>). Artık uygulama gibi açılır.<br>
+        <b>Mutfak tableti / TV:</b> "Mutfak Ekranı" QR'ını okutun, mutfaktaki bir kullanıcının PIN'iyle girin. Siparişler masalara göre gelir, "Hazır"a basınca siparişi giren garsonun telefonu titrer.
+    </div>
+    <div class="foot">EnsariPOS Local Garson · Ücretsiz · 📞 0537 618 63 16</div>
+</div>
+<script>
+(function () {
+    function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    var x = new XMLHttpRequest();
+    x.open('GET', '/api/local-info', true);
+    x.onreadystatechange = function () {
+        if (x.readyState !== 4) return;
+        var d = null; try { d = JSON.parse(x.responseText); } catch (e) { }
+        var addrs = (d && d.addresses) || [], port = (d && d.port) || location.port || 6363;
+        if (!addrs.length) {
+            document.getElementById('boxes').innerHTML = '';
+            var w = document.getElementById('warn');
+            w.style.display = 'block';
+            w.textContent = 'Bu bilgisayarın yerel ağ (Wi-Fi) adresi bulunamadı. Bilgisayar modeme/Wi-Fi ağına bağlı mı?';
+            return;
+        }
+        var base = 'http://' + addrs[0] + ':' + port + '/';
+        var list = [
+            { t: '🛎️ Garson', p: 'Garsonların telefonu için', u: base },
+            { t: '👨‍🍳 Mutfak Ekranı', p: 'Mutfaktaki tablet veya TV için', u: base + 'mutfak.html' }
+        ];
+        document.getElementById('boxes').innerHTML = list.map(function (b, i) {
+            return '<div class="box"><h2>' + b.t + '</h2><p>' + b.p + '</p><div class="qr" id="qr' + i + '"></div><div class="url">' + esc(b.u) + '</div></div>';
+        }).join('');
+        list.forEach(function (b, i) {
+            if (window.QRCode) new QRCode(document.getElementById('qr' + i), { text: b.u, width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M });
+        });
+        if (addrs.length > 1) {
+            var w2 = document.getElementById('warn');
+            w2.style.display = 'block'; w2.style.color = '#6b7280'; w2.style.fontWeight = '400';
+            w2.textContent = 'Bu bilgisayarda birden fazla ağ var; QR çalışmazsa şu adreslerden birini deneyin: ' + addrs.map(function (a) { return 'http://' + a + ':' + port; }).join('  ·  ');
+        }
+    };
+    x.send(null);
+})();
+</script>
+</body>
+</html>

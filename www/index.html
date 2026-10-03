@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <title>EnsariPOS Local Garson</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#1b2440">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Garson">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="images/app-icon-192.png">
+    <link rel="apple-touch-icon" href="images/app-icon-192.png">
+    <!-- eg-settings.js Queries.js'TEN ONCE: paylasilan ayarlar localStorage'a once yazilir -->
+    <script src="scripts/eg-settings.js"></script>
+    <script src="scripts/Jquery.min.js"></script>
+    <script src="scripts/jquery.signalR-2.2.0.min.js"></script>
+    <script src="scripts/Queries.js"></script>
+    <script src="scripts/eg-extra.js"></script>
+    <script src="scripts/SignalR.js"></script>
+    <script src="scripts/bootstrap.min.js"></script>
+    <script src="cordova-shim.js"></script>
+    <link href="css/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/theme.css" rel="stylesheet" />
+    <link href="css/eg-app.css" rel="stylesheet" />
+<script>
+    document.addEventListener("deviceready", onDeviceReady, false);
+    var storage = window.localStorage;
+    var terminalID;
+    var egLoggedIn = false;
+    var egItems = [];          // aktif varlik ekranindaki masalar
+    var egOpenByName = {};     // masa adi -> { amount, since, user, count }
+    var egFirstLoad = true;
+
+    // ------------------------------------------------------------------ Masalar
+    function egBuildOpenMap(tickets) {
+        var map = {};
+        var type = config.entityScreenType || storage.getItem('entityType') || '';
+        (tickets || []).forEach(function (t) {
+            (t.entities || []).forEach(function (e) {
+                if (type && e.type && e.type !== type) return;
+                var m = map[e.name] || (map[e.name] = { amount: 0, since: null, user: '', count: 0 });
+                m.amount += Number(t.remaining != null ? t.remaining : t.totalAmount) || 0;
+                m.count++;
+                var d = t.date ? new Date(t.date) : null;
+                if (d && !isNaN(d) && (!m.since || d < m.since)) m.since = d;
+                // Son siparis saati (bekleyen masa uyarisi icin) - yoksa acilis saati
+                var lo = t.lastOrderDate ? new Date(t.lastOrderDate) : d;
+                if (lo && !isNaN(lo) && (!m.lastOrder || lo > m.lastOrder)) m.lastOrder = lo;
+                if (t.lastModifiedUserName) m.user = t.lastModifiedUserName;
+            });
+        });
+        return map;
+    }
+    function egDuration(since) {
+        if (!since) return '';
+        var min = Math.max(0, Math.floor((Date.now() - since.getTime()) / 60000));
+        if (min < 60) return min + ' dk';
+        var h = Math.floor(min / 60);
+        return h + ' sa ' + (min % 60) + ' dk';
+    }
+    function egIsStateColor(c) {
+        var x = String(c || '').toLowerCase().replace(/\s/g, '');
+        return x && x !== 'transparent' && x !== 'white' && x !== '#ffffff' && x !== '#fff' && x !== '#00ffffff';
+    }
+    function egRender() {
+        var grid = document.getElementById('Masalar');
+        var q = ($('#egTableSearch').val() || '').toLocaleLowerCase('tr').trim();
+        var list = q ? egItems.filter(function (it) { return String(it.name).toLocaleLowerCase('tr').indexOf(q) !== -1; }) : egItems;
+        var busy = 0;
+        var html = list.map(function (item) {
+            var info = egOpenByName[item.name];
+            var color = parseAlfaColor(item.color);
+            var isBusy = !!info;
+            var extra = '';
+            // 29.09.2026: uzun suredir yeni siparis girilmeyen masa kirmizi yanip soner (Ayarlar'dan sure / kapali)
+            var staleMin = parseInt(storage.getItem('staleTableMinutes') || '30', 10) || 0;
+            var idleMin = isBusy && info.lastOrder ? Math.floor((Date.now() - info.lastOrder.getTime()) / 60000) : 0;
+            var isStale = staleMin > 0 && idleMin >= staleMin;
+            if (isBusy) {
+                extra = (isStale ? '<span class="eg-tile__stale">⏰ ' + idleMin + ' dk sipariş yok</span>' : '') +
+                    '<span class="eg-tile__info"><span class="eg-tile__time">' + egDuration(info.since) + '</span>' +
+                    (info.amount > 0 ? '<span class="eg-tile__amt">' + info.amount.toFixed(2) + ' TL</span>' : '') + '</span>' +
+                    (info.user ? '<span class="eg-tile__user">' + egEsc(info.user) + '</span>' : '');
+            } else if (item.caption && item.caption.trim() && item.caption.trim() !== item.name) {
+                // SambaPOS varlik ekraninda tanimli ek bilgi (ör. kisi sayisi) - bicim etiketleri temizlenir
+                var capHtml = egSambaHtml(item.caption, egSambaText(item.name));
+                if (capHtml) extra = '<span class="eg-tile__user">' + capHtml + '</span>';
+            }
+            return '<button type="button" class="eg-tile' + (isBusy ? ' is-busy' : '') + (isStale ? ' is-stale' : '') + '" value="' + egEsc(item.name) + '" onclick="buldiger(this)">' +
+                '<span class="eg-tile__bar"' + (egIsStateColor(color) ? ' style="background:' + egEsc(color) + '"' : '') + '></span>' +
+                '<span class="eg-tile__name">' + (egSambaHtml(item.name) || egEsc(item.name)) + '</span>' + extra + '</button>';
+        }).join('');
+        egItems.forEach(function (it) { if (egOpenByName[it.name]) busy++; });
+        grid.innerHTML = html;
+        grid.setAttribute('data-cols', storage.getItem('tableColumns') || '3');
+        $('#egOccupancy').text(busy + ' / ' + egItems.length + ' masa');
+        var empty = document.getElementById('egEmpty');
+        if (!egItems.length) {
+            empty.style.display = 'block';
+            empty.innerHTML = '<b>' + egEsc(config.entityScreenName || '') + '</b> ekranında masa yok.<br><small>SambaPOS/AlfaPOS\'ta bu varlık ekranına masa (varlık) ekleyin; birkaç saniye içinde burada görünür.</small>';
+        } else if (!list.length) {
+            empty.style.display = 'block';
+            empty.textContent = '"' + q + '" ile eşleşen masa yok.';
+        } else {
+            empty.style.display = 'none';
+        }
+    }
+    function egShowSkeleton() {
+        var s = '';
+        for (var i = 0; i < 12; i++) s += '<div class="eg-skel"></div>';
+        document.getElementById('Masalar').innerHTML = s;
+    }
+    function egGetScreenItems(callback) {
+        $.postJSON(getGetEntityScreenItemsScript(), function (response) {
+            if (!response || response.errors || response.error || !response.data) { callback(null); return; }
+            callback(response.data.items || []);
+        });
+    }
+    // Masalar + acik adisyonlar birlikte yuklenir (kutudaki tutar/sure icin)
+    function egLoad(callback) {
+        var screen = config.entityScreenName;
+        var items, tickets, done = 0;
+        function finish() {
+            if (++done < 2) return;
+            if (screen !== config.entityScreenName) return;   // bu arada sekme degisti
+            if (items) egItems = items;
+            egOpenByName = egBuildOpenMap(tickets);
+            egFirstLoad = false;
+            egRender();
+            if (callback) callback();
+        }
+        egGetScreenItems(function (r) { items = r; finish(); });
+        getOpenTickets(function (t) { tickets = t; finish(); });
+    }
+    // Eski adlar (baska dosyalar/SignalR cagiriyor olabilir)
+    function updateVarlıklar() { egLoad(); }
+    function varlıklar(callback) { egLoad(callback); }
+
+    // SignalR: SambaPOS'ta bir adisyon degisince aninda yenile (girisTEN SONRA baglanir - kopru oturum ister)
+    window.egOnLive = function (on) { $('#egLiveDot').toggleClass('on', !!on); };
+    function egStartLive() {
+        connect(function (message) {
+            if (egLoggedIn && String(message).indexOf('TICKET_REFRESH') !== -1) egLoad();
+        });
+    }
+    /* Yeni eklenen bir masa SambaPOS'tan "TICKET_REFRESH" sinyali TETIKLEMEZ
+       (29.09.2026 kullanici bulgusu: "yeni bardak ekledim goremedim hemen") -
+       hafif bir arka plan yenilemesi yeni masalari ~20 sn icinde gosterir. */
+    setInterval(function () { if (egLoggedIn && !document.hidden) egLoad(); }, 20000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden && egLoggedIn) egLoad(); });
+
+    function changeTerminalId(terminalId) { terminalID = terminalId; }
+    function updateTerminalId(terminalID) {
+        storage.setItem('terminalId', terminalID);
+        changeTerminalId(terminalID);
+    }
+    function onDeviceReady() {
+        document.addEventListener("backbutton", yourCallbackFunction, false);
+        document.addEventListener("resume", onResume, false);
+    }
+    function onResume() { if (egLoggedIn) { connect(); egLoad(); } }
+    function yourCallbackFunction() { }
+
+    /* Sifirdan bir cihazda (Ayarlar hic acilmadan) uygulama YINE DE calissin diye
+       (28.09.2026: "ayarlar otomatik olması lazım") - Terminal/Departman/Adisyon
+       Tipi/Menu/Varlik Ekrani/Otomasyon Komutu SQL'den cekilip secilir. Yonetici
+       Ayarlar'dan kaydettiyse (eg-settings.js) o ayarlar zaten uygulanmis olur. */
+    function ensureAutoConfig(callback) {
+        var alreadyDone = storage.getItem('entityScreen') && storage.getItem('automation');
+        $.getJSON('/api/admin/terminal-config-options').done(function (data) {
+            function pick(values, fallbackRegex) {
+                values = values || [];
+                var m = fallbackRegex && values.find(function (v) { return fallbackRegex.test(v); });
+                return m || values[0] || '';
+            }
+            var screens = data.entityScreens || [];
+            storage.setItem('entityScreensAll', JSON.stringify(screens));
+            storage.setItem('departmentsAll', JSON.stringify(data.departments || []));
+            /* Masa tipi TUM varlik ekranlari otomatik sekme olur (Bahce/Salon/Teras) -
+               yonetici Ayarlar'dan ozel secim yaptiysa (entityScreenTabsCustom) sadece
+               silinmis ekranlar listeden cikar, yenisi onaysiz eklenmez. */
+            var tableScreens = screens.filter(function (s) { return /masa/i.test(s.entityType || ''); }).map(function (s) { return s.name; });
+            var existingTabs = [];
+            try { existingTabs = JSON.parse(storage.getItem('entityScreenTabs') || '[]'); } catch (e) { existingTabs = []; }
+            var allNames = screens.map(function (s) { return s.name; });
+            existingTabs = existingTabs.filter(function (n) { return allNames.indexOf(n) !== -1; });
+            var mergedTabs = existingTabs.slice();
+            if (!storage.getItem('entityScreenTabsCustom')) {
+                tableScreens.forEach(function (n) { if (mergedTabs.indexOf(n) === -1) mergedTabs.push(n); });
+            }
+            if (mergedTabs.length) storage.setItem('entityScreenTabs', JSON.stringify(mergedTabs));
+            // Kayitli ekran adi guncel listede yoksa (silinmis/bozuk kodlanmis) gecerli biriyle degistir
+            var savedEntity = storage.getItem('entityScreen');
+            var validEntity = savedEntity && screens.some(function (s) { return s.name === savedEntity; });
+            if (!validEntity) {
+                var healed = screens.find(function (s) { return /masa/i.test(s.name) || /masa/i.test(s.entityType || ''); }) || screens[0];
+                if (healed) {
+                    storage.setItem('entityScreen', healed.name);
+                    storage.setItem('entityType', healed.entityType || '');
+                    config.entityScreenName = healed.name;
+                    config.entityScreenType = healed.entityType || '';
+                }
+            }
+            if (alreadyDone) return callback();
+            var terminal = storage.getItem('terminal') || pick(data.terminals);
+            var department = storage.getItem('department') || pick(data.departments, /restoran/i);
+            var ticketType = storage.getItem('ticketType') || pick(data.ticketTypes, /adisyon/i);
+            var menu = storage.getItem('menu') || pick(data.menus);
+            var automation = storage.getItem('automation') || pick(data.automationCommands, /^hesap yaz$/i);
+            var chosenName = storage.getItem('entityScreen');
+            var chosen = chosenName && screens.find(function (s) { return s.name === chosenName; });
+            storage.setItem('terminal', terminal);
+            storage.setItem('department', department);
+            storage.setItem('ticketType', ticketType);
+            storage.setItem('menu', menu);
+            storage.setItem('automation', automation);
+            storage.setItem('licence', 'true');
+            storage.setItem('TTL', 999999);
+            config.terminalName = terminal;
+            config.departmentName = department;
+            config.ticketTypeName = ticketType;
+            config.menuName = menu;
+            if (chosen) { config.entityScreenName = chosen.name; config.entityScreenType = chosen.entityType || ''; }
+            callback();
+        }).fail(function () { callback(); });
+    }
+
+    /* Ustte varlik ekrani sekmeleri (Bahce/Salon/Teras) - ayni anda TEK ekran aktif */
+    function renderEntityTabs() {
+        var host = document.getElementById('entityScreenTabs');
+        var all = [];
+        try { all = JSON.parse(storage.getItem('entityScreensAll') || '[]'); } catch (e) { all = []; }
+        var tabNames = [];
+        try { tabNames = JSON.parse(storage.getItem('entityScreenTabs') || '[]'); } catch (e) { tabNames = []; }
+        var tabs = tabNames.map(function (n) { return all.find(function (s) { return s.name === n; }); }).filter(Boolean);
+        if (tabs.length < 2) { host.style.display = 'none'; return; }
+        host.style.display = 'flex';
+        var active = storage.getItem('entityScreen');
+        host.innerHTML = '';
+        tabs.forEach(function (s) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'eg-tab' + (s.name === active ? ' active' : '');
+            btn.innerHTML = egSambaHtml(s.name) || egEsc(s.name);
+            btn.onclick = function () {
+                egHaptic(10);
+                storage.setItem('entityScreen', s.name);
+                storage.setItem('entityType', s.entityType || '');
+                config.entityScreenName = s.name;
+                config.entityScreenType = s.entityType || '';
+                renderEntityTabs();
+                egItems = [];
+                egShowSkeleton();
+                egLoad();
+            };
+            host.appendChild(btn);
+            if (s.name === active) setTimeout(function () { btn.scrollIntoView({ inline: 'center', block: 'nearest' }); }, 0);
+        });
+    }
+
+    function startApp() {
+        egLoggedIn = true;
+        $('#garsonLoginBox').hide();
+        $('#egApp').show();
+        egShowSkeleton();
+        egStartLive();
+        ensureAutoConfig(function () {
+            renderEntityTabs();
+            egSetupDeptButton();
+            egInstallHint();
+            var stale = storage.getItem('egStaleTerminalId');
+            if (stale) { storage.removeItem('egStaleTerminalId'); try { unregisterTerminal(stale, function () { }); } catch (e) { } }
+            if (storage.getItem('terminalId')) {
+                getTerminalExists(storage.getItem('terminalId'), function (result) {
+                    if (result) changeTerminalId(storage.getItem('terminalId'));
+                    else registerTerminal(function (terminalId) { updateTerminalId(terminalId); });
+                });
+            } else {
+                registerTerminal(function (terminalId) { updateTerminalId(terminalId); });
+            }
+            egLoad();
+        });
+    }
+
+    // ------------------------------------------------------------------ Departman (garsonsys'teki 🏢)
+    // Birden fazla departman varsa (ör. Restoran / Paket Servis) garson BU CIHAZ icin degistirebilir.
+    function egDepartments() {
+        try { return JSON.parse(storage.getItem('departmentsAll') || '[]'); } catch (e) { return []; }
+    }
+    function egSetupDeptButton() {
+        $('#egBtnDept').toggle(egDepartments().length > 1).attr('title', 'Departman: ' + (storage.getItem('department') || ''));
+    }
+    function egOpenDepartments() {
+        var deps = egDepartments(), current = storage.getItem('department');
+        $('#egDeptModal').remove();
+        var m = $('<div class="eg-modal-backdrop" id="egDeptModal"><div class="eg-modal">' +
+            '<div class="eg-modal__head"><div class="eg-modal__title">🏢 Departman</div><button type="button" class="eg-modal__close" data-close>✕</button></div>' +
+            '<div id="egDeptList" style="display:grid;gap:8px;"></div>' +
+            '<div class="eg-help" style="font-size:11.5px;color:var(--eg-muted);margin-top:10px;">Sadece bu cihaz için geçerlidir. Tüm cihazların varsayılanı Ayarlar\'dan değişir.</div>' +
+            '</div></div>').appendTo('body');
+        deps.forEach(function (d) {
+            $('<button type="button" class="eg-btn ' + (d === current ? 'eg-btn--orange' : 'eg-btn--ghost') + ' eg-btn--block"></button>')
+                .text((d === current ? '✓ ' : '') + d)
+                .on('click', function () { m.remove(); egSelectDepartment(d); })
+                .appendTo('#egDeptList');
+        });
+        m.on('click', '[data-close]', function () { m.remove(); });
+        m.on('click', function (e) { if (e.target === m[0]) m.remove(); });
+    }
+    function egSelectDepartment(dep) {
+        if (!dep || dep === storage.getItem('department')) return;
+        var old = storage.getItem('terminalId');
+        storage.setItem('department', dep);
+        config.departmentName = dep;
+        storage.removeItem('terminalId');
+        if (old) { try { unregisterTerminal(old, function () { }); } catch (e) { } }
+        registerTerminal(function (terminalId) {
+            updateTerminalId(terminalId);
+            egSetupDeptButton();
+            egLoad();
+            egToast('Departman: ' + dep);
+        });
+    }
+
+    // ------------------------------------------------------------------ "Ana ekrana ekle" bilgisi (telefonlar)
+    var egDeferredInstall = null;
+    window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); egDeferredInstall = e; $('#egInstallBtn').show(); });
+    function egInstallHint() {
+        var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+        var touch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+        if (standalone || !touch || storage.getItem('egInstallHintClosed')) return;
+        var ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+        $('#egInstallText').html(ios
+            ? 'Uygulama gibi açmak için: alttaki <b>Paylaş</b> (□↑) → <b>Ana Ekrana Ekle</b>'
+            : 'Uygulama gibi açmak için: sağ üstteki <b>⋮</b> menü → <b>Ana ekrana ekle</b>');
+        $('#egInstallHint').css('display', 'flex');
+    }
+
+    // ------------------------------------------------------------------ Giris (SambaPOS/AlfaPOS PIN'i)
+    function showLoginBox() {
+        egLoggedIn = false;
+        $('#egApp').hide();
+        $('#garsonLoginBox').show();
+        egPinClear();
+        $('#gDotWifi').css('background', navigator.onLine ? '#2ecc71' : '#e74c3c');
+        window.addEventListener('online', function () { $('#gDotWifi').css('background', '#2ecc71'); });
+        window.addEventListener('offline', function () { $('#gDotWifi').css('background', '#e74c3c'); });
+        $.getJSON('/api/health')
+            .done(function (h) {
+                $('#gDotServer').css('background', h.samba ? '#2ecc71' : (h.sql ? '#f1c40f' : '#e74c3c'));
+                if (!h.samba) $('#gLoginErr').text('SambaPOS mesaj sunucusuna ulaşılamıyor (' + h.sambaHost + ':' + h.sambaPort + '). SambaPOS açık mı?').show();
+                else if (!h.sql) $('#gLoginErr').text('SambaPOS veritabanına ulaşılamıyor.').show();
+            })
+            .fail(function () { $('#gDotServer').css('background', '#e74c3c'); });
+    }
+    /* x.html'in eskiden yukledigi arayuz metinleri (29.09.2026: "yazılara bak hepsi gitti") */
+    function ensureLangStrings() {
+        if (storage.getItem('total')) return;
+        var LANG_TR = {
+            "ok":"Tamam","no_connection":"İnternet Yok","connection_error":"Bağlantı Hatası",
+            "program_settings":"Program Ayarları","message_server_ip":"Mesaj Sunucu IP",
+            "sambamarket_email_lan":"SambaMarket Email","ticket_type_lan":"Adisyon Tipi","terminal_lan":"Terminal",
+            "department_lan":"Departman","entity_screen_name":"Varlık Ekranı Adı","entity_type":"Varlık Tipi",
+            "menu_lan":"Menu","print_bill_automation_name":"Hesap Yaz Otomasyon Komutu","ticket_tag":"Adisyon Etiketi",
+            "ask":"Sorulsun mu?","ask_when_the_ticket_was_closed":"Adisyon açılırken sorulsun mu?",
+            "exit_option":"Çıkış Seçeneği","log_out_when_ticket_was_closed":"Adisyon Kapatılınca Çıkış Yap",
+            "select_db_language":"Dil Seçiniz","english_db":"Türkçe DB","save":"Kaydet",
+            "user_not_found":"Kullanıcı Bulunamadı","login_failed":"Giriş Hatalı","please_wait":"Lütfen Bekleyiniz.",
+            "select_ticket":"Adisyon Seçiniz","close":"Kapat","merge":"Birleştir","ticket":"Adisyon",
+            "message_1":"Cihaz tarihi ve sunucu tarih bilgisi farklı. Lütfen kontrol edin.",
+            "message_2":"Güncelleme ve lisans kontrolü süresi sona erdi.",
+            "warning":"Uyarı","user":"Kullanıcı","total":"Toplam","an_error_occured":"Hata Oluştu",
+            "add_quantity":"Adet Giriniz","cancel":"İptal","ticket_note":"Adisyon Notu","add_ticket":"Adisyon Ekle",
+            "add_order":"Sipariş Ekle","change_table":"Masa Değiştir","select_reasons":"Sebep Seçiniz",
+            "select_table":"Masa Seçiniz","void":"İade","cancel_void":"İade İptal","gift":"İkram",
+            "cancel_gift":"İkram İptal","password":"Şifre",
+            "message_3":"Güncelleme kontrolü","message_3_1":" gün içerisinde yapılacak.",
+            "message_4":"Güncelleme kontrol süresi sona erdi.",
+            "email_lan":"Email","config":"Ayarlar","new":"Yeni","ip_cannot_empty":"IP Adresi Boş Olamaz",
+            "please_config":"Lütfen Ayarlara girerek tüm alanları doldurunuz","neworder":"Yeni Sipariş",
+            "orderno":"Sip.No","submitted":"Gönderildi","technical_problem":"Adisyon Teknik Bir Arızadan Dolayı Yüklenemedi",
+            "another_user":"Adisyon Başka Bir Kullanıcı Tarafından Değiştirilmiş. Son Değişiklikler İptal Edilecek.",
+            "portion":"Porsiyon","enter_password":"Şifre giriniz"
+        };
+        Object.keys(LANG_TR).forEach(function (k) { storage.setItem(k, LANG_TR[k]); });
+    }
+    /* SambaPOS token'i artik SUNUCUDA, garsonun kendi kullanici adi + PIN'iyle alinir
+       (EnsariGarsonSrv). Tarayici hicbir API sifresi bilmez; Queries.js'in bekledigi
+       yer tutucu deger burada verilir, gercek token'i kopru ekler. */
+    function ensureSambaposAuth(callback) {
+        ensureLangStrings();
+        storage.setItem('accessToken', 'garson-session');
+        storage.setItem('refreshToken', 'garson-session');
+        callback();
+    }
+    function egApplyMe(data) {
+        storage.setItem('username', data.userName);           // SambaPOS'a giden gercek kullanici adi (ek isaret YOK)
+        storage.setItem('canTakePayment', data.canTakePayment ? '1' : '0');
+        storage.setItem('userRoleId', String(data.roleId || 0));
+        storage.setItem('isAdmin', data.isAdmin ? '1' : '0');
+        storage.setItem('paymentCommands', JSON.stringify(data.paymentCommands || []));
+        config.userName = data.userName;
+        $('#egUserName').text(data.userName);
+        $('#egUserLock').toggle(!data.canTakePayment);
+    }
+    var egPinValue = '';
+    function egPinRender() { $('#gPinDisplay').val(egPinValue); }
+    function egPinAdd(d) { if (egPinValue.length < 12) { egPinValue += d; egPinRender(); egHaptic(8); } }
+    function egPinBackspace() { egPinValue = egPinValue.slice(0, -1); egPinRender(); }
+    function egPinClear() { egPinValue = ''; egPinRender(); }
+    function doLogin() {
+        var pin = egPinValue.trim();
+        if (!pin) return;
+        $('#gLoginErr').hide();
+        $('#gLoginBtn').prop('disabled', true);
+        $.ajax({
+            url: '/api/login', method: 'POST', contentType: 'application/json',
+            data: JSON.stringify({ pin: pin }),
+            success: function (data) {
+                egApplyMe(data);
+                ensureSambaposAuth(startApp);
+            },
+            error: function (xhr) {
+                var msg = 'Giriş başarısız.';
+                try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) { }
+                $('#gLoginErr').text(msg).show();
+                egPinClear();
+            },
+            complete: function () { $('#gLoginBtn').prop('disabled', false); }
+        });
+    }
+    $(document).ready(function () {
+        $.ajax({ url: '/api/me', method: 'GET' })
+            .done(function (data) { egApplyMe(data); ensureSambaposAuth(startApp); })
+            .fail(function () { showLoginBox(); });
+        $('#gLoginBtn').on('click', doLogin);
+        $(document).on('keydown', function (e) {
+            if ($('#garsonLoginBox').is(':hidden')) return;
+            if (e.key >= '0' && e.key <= '9') egPinAdd(e.key);
+            else if (e.key === 'Backspace') egPinBackspace();
+            else if (e.key === 'Enter') doLogin();
+        });
+        $('#gLogoutLink').on('click', function (e) {
+            e.preventDefault();
+            $.ajax({ url: '/api/logout', method: 'POST' }).always(function () { location.reload(); });
+        });
+        $('#egBtnSearch').on('click', function () {
+            var bar = $('#egSearchBar');
+            if (bar.is(':visible')) { bar.hide(); $('#egTableSearch').val(''); egRender(); }
+            else { bar.css('display', 'flex'); $('#egTableSearch').focus(); }
+        });
+        $('#egSearchClose').on('click', function () { $('#egSearchBar').hide(); $('#egTableSearch').val(''); egRender(); });
+        $('#egTableSearch').on('input', egRender);
+        $('.egThemeBtn').on('click', function () { var d = egToggleTheme(); $('.egThemeBtn').text(d ? '☀️' : '🌙'); });
+        $('#egBtnDept').on('click', egOpenDepartments);
+        $('#egInstallClose').on('click', function () { storage.setItem('egInstallHintClosed', '1'); $('#egInstallHint').hide(); });
+        $('#egInstallBtn').on('click', function () {
+            if (!egDeferredInstall) return;
+            egDeferredInstall.prompt();
+            egDeferredInstall.userChoice.then(function () { egDeferredInstall = null; $('#egInstallHint').hide(); });
+        });
+        $('.egThemeBtn').text(document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙');
+        // Dakika sayaclari guncel kalsin
+        setInterval(function () { if (egLoggedIn && !egFirstLoad) egRender(); }, 60000);
+    });
+
+    // ------------------------------------------------------------------ Masaya dokunma
+    function buldiger(a) {
+        egHaptic(12);
+        var terminalId = storage.getItem('terminalId');
+        var name = $(a).val();
+        mainclick(a, name, terminalId);
+    }
+
+    function mainclick(a, name, terminalId) {
+        storage.removeItem('egDbBase');   // 30.09.2026: "baska kullanici degistirmis" tabani her masa acilisinda yeniden alinir (ticket_load.html)
+        getTickets(name, function (result) {
+            if (!result) { alert('Masa bilgisi alınamadı. Lütfen tekrar deneyin.'); return; }
+            var tickets = [];
+            var ticketsid = [];
+            switch (result.length) {
+                case 0:
+                    $("#model2").empty();
+                    storage.removeItem('ticketId');
+                    storage.removeItem('load');
+                    storage.removeItem("ttag");
+                    storage.setItem("Masa", a.value);
+                    if (storage.getItem("sorulsun")) {
+                        var ticketTag = storage.getItem("ticketTag") || 'Adisyon Etiketi';
+                        $("#model2").append('<div id="myModal2" class="modal fade" role="dialog"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h3>' + egEsc(ticketTag) + '</h3></div><div class="modal-body"><input type="tel" pattern="[0-9]*" id="focus" inputmode="numeric" class="form-control text" /></div><div class="modal-footer"><button type="button" class="btn btn-danger clsBtn" data-dismiss="modal">Kapat</button><input type="button" class="btn btn-info sBtn" value="Kaydet"/></div></div></div></div>');
+                        $("#myModal2").modal('show');
+                        $('#myModal2').on('shown.bs.modal', function () { $("#focus").focus(); });
+                        $(".sBtn").unbind().click(function () {
+                            var tag = $(".text").val();
+                            if (tag != '') {
+                                storage.setItem("ttag", tag);
+                                window.location = "ticket.html";
+                            } else {
+                                storage.removeItem("ttag");
+                                $("#myModal2").modal('hide');
+                            }
+                        });
+                        $(".clsBtn").unbind().click(function () { $("#myModal2").modal('hide'); });
+                    } else {
+                        window.location = "ticket.html";
+                    }
+                    break;
+                case 1:
+                    var ticketID = result[0].id;
+                    storage.setItem('ticketId', ticketID);
+                    loadTerminalTicket(terminalId, ticketID, function () {
+                        storage.setItem('load', 'var');
+                        storage.setItem("Masa", a.value);
+                        window.location = "ticket_load.html";
+                    });
+                    break;
+                default:
+                    // Ayni masada birden fazla adisyon: sec veya birlestir
+                    $("#model").empty();
+                    $("#model").append('<div id="myModal" class="modal fade" role="dialog"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h3 class="tag">Adisyon Seçiniz</h3></div><div class="modal-body"></div><div class="modal-footer"><button type="button" class="btn btn-danger clsBtn" data-dismiss="modal">Kapat</button><input type="button" class="btn btn-info bBtn" value="Birleştir"/></div></div></div></div>');
+                    $(".modal-body").empty();
+                    $("#myModal").modal('show');
+                    $.each(result, function (key, item) {
+                        tickets.push(item.id);
+                        $(".modal-body").append('<div class="eg-tsel"><input type="button" data-id="' + item.id + '" value="' + (key + 1) + '" class="btn btn-default slctMasa" /><button type="button" id="' + item.id + '" class="btn btn-default tBtn">Adisyon #' + item.id + ' <span class="spn">' + item.remainingAmount.toFixed(2) + ' TL</span></button></div>');
+                    });
+            }
+            $(".slctMasa").unbind().click(function () {
+                $(this).toggleClass("select");
+                var id = $(this).data("id");
+                if ($(this).hasClass("select")) {
+                    $(this).css("background-color", "#ff7a30").css('color', '#fff');
+                    ticketsid.push(id);
+                } else {
+                    $(this).css("background-color", "").css('color', '');
+                    ticketsid = ticketsid.filter(function (x) { return x != id; });
+                }
+            });
+            $(".tBtn").unbind().click(function () {
+                var ticketid = $(this).attr("id");
+                storage.setItem('ticketId', ticketid);
+                loadTerminalTicket(terminalId, ticketid, function () {
+                    storage.setItem('load', 'var');
+                    storage.setItem("Masa", a.value);
+                    window.location = "ticket_load.html";
+                });
+            });
+            $(".bBtn").unbind().click(function () {
+                var ids = ticketsid.length > 1 ? ticketsid : tickets;
+                mergeTickets(ids, function (result) {
+                    storage.setItem('ticketId', result);
+                    loadTerminalTicket(terminalId, result, function () {
+                        storage.setItem('load', 'var');
+                        storage.setItem("Masa", a.value);
+                        window.location = "ticket_load.html";
+                    });
+                });
+            });
+        });
+    }
+</script>
+<style>
+    .eg-tsel { display: flex; gap: 6px; margin-bottom: 6px; }
+    .eg-tsel .slctMasa { width: 52px; height: 52px; border-radius: 12px; font-weight: 800; }
+    .eg-tsel .tBtn { flex: 1; height: 52px; border-radius: 12px; text-align: left; font-weight: 700; font-size: 15px; }
+    .eg-tsel .spn { float: right; color: #2563eb; font-weight: 800; }
+    .modal-content { border-radius: 16px; }
+    #egUserLock { margin-left: 4px; }
+</style>
+</head>
+<body class="eg-body">
+    <div id="garsonLoginBox" style="display:none;position:fixed;inset:0;z-index:2000;background:var(--eg-bg);overflow-y:auto;">
+        <div class="eg-login-wrap">
+            <div class="eg-login-card">
+                <button type="button" class="eg-login-theme egThemeBtn" title="Tema">🌙</button>
+                <div class="eg-hero__badge" style="margin:0 auto 10px;width:76px;height:76px;">
+                    <svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true">
+                        <circle cx="32" cy="17" r="10" fill="#2c3440"/>
+                        <path d="M25 25 L32 30 L39 25 L39 29 L32 34 L25 29 Z" fill="#ff7a30"/>
+                        <path d="M13 58 C13 40 20 31 32 31 C44 31 51 40 51 58 Z" fill="#2c3440"/>
+                        <rect x="45" y="29" width="5" height="18" rx="2.5" fill="#2c3440"/>
+                        <ellipse cx="49" cy="25" rx="11" ry="3.2" fill="#3a4454"/>
+                        <path d="M40 25 A9 9 0 0 1 58 25 Z" fill="#fff" stroke="#3a4454" stroke-width="1.5"/>
+                    </svg>
+                </div>
+                <div style="font-weight:800;font-size:18px;color:var(--eg-text);">EnsariPOS Garson</div>
+                <div class="eg-login-sub">SambaPOS / AlfaPOS kullanıcı PIN'inizle girin</div>
+                <div class="eg-status-row" style="margin:10px auto 4px;">
+                    <span>Wifi <span id="gDotWifi" class="eg-dot" style="background:#2ecc71;"></span></span>
+                    <span>Sunucu <span id="gDotServer" class="eg-dot"></span></span>
+                </div>
+                <div id="gLoginErr" style="display:none;color:#e74c3c;background:#fdeceb;border-radius:8px;padding:8px 10px;font-size:13px;margin-top:10px;"></div>
+                <input id="gPinDisplay" type="password" inputmode="none" readonly placeholder="••••" class="eg-pin-display" />
+                <div class="eg-login-grid">
+                    <div class="eg-numpad">
+                        <button type="button" class="eg-num-btn" onclick="egPinAdd('1')">1</button>
+                        <button type="button" class="eg-num-btn" onclick="egPinAdd('2')">2</button>
+                        <button type="button" class="eg-num-btn" onclick="egPinAdd('3')">3</button>
+                        <button type="button" class="eg-num-btn" onclick="egPinAdd('4')">4</button>
+                        <button type="button" class="eg-num-btn" onclick="egPinAdd('5')">5</button>
+                        <button type="button" class="eg-num-btn" onclick="egPinAdd('6')">6</button>
+                        <button type="button" class="eg-num-btn" onclick="egPinAdd('7')">7</button>
+                        <button type="button" class="eg-num-btn" onclick="egPinAdd('8')">8</button>
+                        <button type="button" class="eg-num-btn" onclick="egPinAdd('9')">9</button>
+                        <button type="button" class="eg-num-btn eg-num-btn--clear" onclick="egPinClear()" title="Temizle">🗑</button>
+                        <button type="button" class="eg-num-btn" onclick="egPinAdd('0')">0</button>
+                        <button type="button" class="eg-num-btn" onclick="egPinBackspace()" title="Geri">⌫</button>
+                    </div>
+                    <div class="eg-side-actions">
+                        <a href="Config.html" class="eg-side-btn eg-side-btn--cfg" title="Ayarlar">⚙️<span>Ayar</span></a>
+                        <button type="button" id="gLoginBtn" class="eg-side-btn eg-side-btn--enter" title="Giriş">✅<span>Giriş</span></button>
+                    </div>
+                </div>
+                <div class="eg-login-footer">
+                    <strong>EnsariPOS Local Garson</strong>
+                    <span>📞 0537 618 63 16</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="egApp" class="eg-app" style="display:none;">
+        <header class="eg-topbar">
+            <button type="button" class="eg-tb-btn" id="egBtnSearch" title="Masa ara">🔍</button>
+            <button type="button" class="eg-tb-btn egThemeBtn" title="Açık / koyu tema">🌙</button>
+            <button type="button" class="eg-tb-btn" id="egBtnDept" title="Departman değiştir" style="display:none;">🏢</button>
+            <div class="eg-tb-center">
+                <div class="eg-tb-user"><span id="egUserName"></span><span id="egUserLock" title="Ödeme alma yetkisi yok" style="display:none;">🔒</span></div>
+                <div class="eg-tb-badge"><span class="eg-live-dot" id="egLiveDot" title="Canlı bağlantı"></span><span id="egOccupancy">0 / 0 masa</span></div>
+            </div>
+            <a href="#" id="gLogoutLink" class="eg-tb-btn eg-tb-btn--exit" title="Çıkış">ÇIKIŞ</a>
+        </header>
+        <div class="eg-brandline">EnsariPOS <b>Local Garson</b> · 📞 0537 618 63 16</div>
+        <div class="eg-searchbar" id="egSearchBar" style="display:none;">
+            <input type="search" id="egTableSearch" placeholder="Masa ara..." autocomplete="off" />
+            <button type="button" id="egSearchClose" title="Kapat">✕</button>
+        </div>
+        <nav id="entityScreenTabs" class="eg-tabs" style="display:none;"></nav>
+        <main class="eg-grid-wrap">
+            <div id="Masalar" class="eg-grid" data-cols="3"></div>
+            <div id="egEmpty" class="eg-empty" style="display:none;"></div>
+        </main>
+        <div class="eg-install" id="egInstallHint" style="display:none;">
+            <span style="font-size:22px;">📲</span>
+            <span id="egInstallText" style="flex:1;"></span>
+            <button type="button" class="eg-btn eg-btn--green" id="egInstallBtn" style="display:none;height:36px;font-size:13px;">YÜKLE</button>
+            <button type="button" class="eg-install__close" id="egInstallClose" title="Kapat">✕</button>
+        </div>
+    </div>
+    <div id="model"></div>
+    <div id="model2"></div>
+</body>
+</html>

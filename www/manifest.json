@@ -1,0 +1,16 @@
+{
+  "name": "EnsariPOS Local Garson",
+  "short_name": "Garson",
+  "description": "SambaPOS / AlfaPOS için ücretsiz yerel garson terminali",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef1f6",
+  "theme_color": "#1b2440",
+  "lang": "tr",
+  "icons": [
+    { "src": "images/app-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "images/app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
